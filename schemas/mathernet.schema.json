@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mathernet.local/schema/mathernet-v1.json",
+  "title": "Mathernet local knowledge graph",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "nodes", "edges", "sources"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "nodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/formula_node" }
+    },
+    "edges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dependency_edge" }
+    },
+    "sources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/source_record" }
+    }
+  },
+  "$defs": {
+    "non_empty_string": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "string_list": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/non_empty_string" }
+    },
+    "source_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "url", "publisher", "retrieved_at", "excerpt"],
+      "properties": {
+        "id": { "$ref": "#/$defs/non_empty_string" },
+        "title": { "$ref": "#/$defs/non_empty_string" },
+        "url": { "type": "string", "format": "uri" },
+        "publisher": { "$ref": "#/$defs/non_empty_string" },
+        "retrieved_at": { "$ref": "#/$defs/timestamp" },
+        "excerpt": { "$ref": "#/$defs/non_empty_string" }
+      }
+    },
+    "ai_module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "explanation", "examples", "derivation_steps", "generated_at"],
+      "properties": {
+        "summary": { "$ref": "#/$defs/non_empty_string" },
+        "explanation": { "$ref": "#/$defs/non_empty_string" },
+        "examples": { "$ref": "#/$defs/string_list" },
+        "derivation_steps": { "$ref": "#/$defs/string_list" },
+        "generated_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "user_module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["notes", "updated_at"],
+      "properties": {
+        "notes": { "type": "string" },
+        "updated_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "formula_node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "latex",
+        "aliases",
+        "topic_tags",
+        "ai_module",
+        "user_module",
+        "status",
+        "sources",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/non_empty_string" },
+        "name": { "$ref": "#/$defs/non_empty_string" },
+        "latex": { "$ref": "#/$defs/non_empty_string" },
+        "aliases": { "$ref": "#/$defs/string_list" },
+        "topic_tags": { "$ref": "#/$defs/string_list" },
+        "ai_module": { "$ref": "#/$defs/ai_module" },
+        "user_module": { "$ref": "#/$defs/user_module" },
+        "status": {
+          "enum": ["new", "learning", "reviewed", "needs_review"]
+        },
+        "sources": { "$ref": "#/$defs/string_list" },
+        "created_at": { "$ref": "#/$defs/timestamp" },
+        "updated_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "dependency_edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source_id",
+        "target_id",
+        "relation",
+        "rationale",
+        "sources",
+        "verification_status",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/non_empty_string" },
+        "source_id": { "$ref": "#/$defs/non_empty_string" },
+        "target_id": { "$ref": "#/$defs/non_empty_string" },
+        "relation": {
+          "enum": ["prerequisite", "derivation_basis", "special_case", "generalization", "equivalent_form"]
+        },
+        "rationale": { "$ref": "#/$defs/non_empty_string" },
+        "sources": { "$ref": "#/$defs/string_list" },
+        "verification_status": {
+          "enum": ["ai_suggested", "user_verified", "user_edited", "rejected", "unsupported"]
+        },
+        "created_at": { "$ref": "#/$defs/timestamp" },
+        "updated_at": { "$ref": "#/$defs/timestamp" }
+      }
+    }
+  }
+}

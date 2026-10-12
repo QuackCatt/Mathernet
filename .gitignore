@@ -150,6 +150,11 @@ activemq-data/
 # Environments
 .env
 .envrc
+
+# Mathernet local learner data and temporary artifacts
+/data/
+/tmp/
+/output/
 .venv
 env/
 venv/
