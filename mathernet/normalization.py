@@ -69,6 +69,11 @@ def latex_to_unicode(value: str) -> str:
     output = normalize_text(value).replace("$", "")
     for source, target in replacements.items():
         output = output.replace(source, target)
+    output = re.sub(
+        r"\\(?:operatorname|mathrm|text)\s*\{([^{}]+)\}",
+        r"\1",
+        output,
+    )
     output = re.sub(r"\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}", r"(\1)/(\2)", output)
     output = re.sub(r"\\sqrt\s*\{([^{}]+)\}", r"sqrt(\1)", output)
     output = re.sub(r"\\(?:left|right|displaystyle|,|;|!)", "", output)

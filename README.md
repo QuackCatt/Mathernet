@@ -20,6 +20,8 @@ The setup script creates a local virtual environment and a private `.env` file. 
 
 If the live retrieval service is unavailable, previously saved formula cards remain searchable. New online learning requests report that retrieval is unavailable instead of inventing content.
 
+`scripts/mathernet doctor` distinguishes required retrieval settings from optional model synthesis. The MCP Web Search command or URL must be configured for new learning requests. `OPENAI_API_KEY` is optional: without it, Mathernet creates a conservative source-backed record and does not invent derivations or dependency edges.
+
 ## Main Commands
 
 ```sh
@@ -47,7 +49,11 @@ scripts/mathernet demo
 scripts/mathernet serve
 ```
 
-The workspace provides formula search and status filters, a keyboard-accessible dependency graph, source traceability, personal notes, study status controls, and explicit confirmation for AI-suggested dependencies. Desktop uses a three-column library, graph, and detail layout; smaller screens switch between Library, Graph, and Details tabs. Search, selection, graph depth, detail tab, and mobile view are kept in the URL for reloadable study sessions.
+The workspace provides formula search and status filters, a keyboard-accessible dependency graph, source traceability, personal notes, study status controls, and explicit confirmation for AI-suggested dependencies. It uses a three-column desktop library, graph, and detail layout. Search, selection, graph depth, and detail tab are kept in the URL for reloadable study sessions.
+
+Formula expressions use the stored LaTeX source and locally vendored KaTeX rendering throughout the graph and formula card. The graph behaves like a free-form knowledge canvas: nodes settle through force-directed motion, relationships follow organic curves, and the view supports node dragging, neighbour highlighting, canvas panning, wheel zoom, and keyboard selection.
+
+The learn action follows the same learning chain as the terminal: approved-source retrieval, synthesis, local persistence, and explicit dependency decisions. The interface reports offline synthesis notes and unresolved prerequisites after the card is saved.
 
 ## Local JSON API for Web Development
 

@@ -9,7 +9,6 @@ const state = {
   status: "",
   depth: 1,
   tab: "overview",
-  mobilePanel: "library",
   notesDirty: false,
   pendingRejectEdgeId: null,
   libraryRequest: 0,
@@ -24,9 +23,6 @@ const elements = {
   libraryQuery: document.querySelector("#library-query"),
   formulaCount: document.querySelector("#formula-count"),
   formulaList: document.querySelector("#formula-list"),
-  graphCanvas: document.querySelector("#graph-canvas"),
-  edgeLayer: document.querySelector("#edge-layer"),
-  nodeLayer: document.querySelector("#node-layer"),
   graphEmpty: document.querySelector("#graph-empty"),
   graphDescription: document.querySelector("#graph-description"),
   inspectorTitle: document.querySelector("#inspector-title"),
@@ -88,6 +84,29 @@ function escapeHTML(value) {
 function truncate(value, length) {
   const text = String(value ?? "");
   return text.length > length ? `${text.slice(0, Math.max(1, length - 1))}…` : text;
+}
+
+function latexMarkup(value, fallback = "", displayMode = false) {
+  const source = String(value || fallback || "").trim();
+  if (!source) return "";
+  if (window.katex) {
+    try {
+      return window.katex.renderToString(source, {
+        displayMode,
+        throwOnError: false,
+        strict: "ignore",
+        trust: false,
+        output: "html",
+      });
+    } catch {
+      return escapeHTML(source);
+    }
+  }
+  return escapeHTML(source);
+}
+
+function formulaValue(card) {
+  return card?.formula?.latex || card?.display || "";
 }
 
 function safeUrl(value) {
@@ -172,7 +191,7 @@ function showToast(message, type = "success") {
   const toast = document.createElement("div");
   toast.className = `toast ${type}`;
   toast.innerHTML = `
-    <span class="toast-icon">${icon(type === "error" ? "alert" : "check")}</span>
+    <span class="toast-icon">${icon(type === "success" ? "check" : "alert")}</span>
     <p class="toast-message">${escapeHTML(message)}</p>
     <button class="toast-close" type="button" aria-label="Dismiss message">${icon("x")}</button>
   `;
@@ -214,7 +233,6 @@ function syncUrl() {
   setOrDelete("depth", state.depth, 1);
   setOrDelete("q", state.query);
   setOrDelete("status", state.status);
-  setOrDelete("view", state.mobilePanel, "library");
   window.history.replaceState({}, "", url);
 }
 
@@ -222,12 +240,10 @@ function restoreUrlState() {
   const params = new URLSearchParams(window.location.search);
   const depth = Number(params.get("depth"));
   const tab = params.get("tab");
-  const view = params.get("view");
   state.query = params.get("q") || "";
   state.status = params.get("status") || "";
   state.depth = [1, 2].includes(depth) ? depth : 1;
   state.tab = ["overview", "sources", "learning"].includes(tab) ? tab : "overview";
-  state.mobilePanel = ["library", "graph", "inspector"].includes(view) ? view : "library";
   state.selectedId = params.get("formula");
   elements.globalQuery.value = state.query;
   elements.libraryQuery.value = state.query;
@@ -279,100 +295,11 @@ function renderLibrary() {
     .join("");
 }
 
-function graphPositions(graph) {
-  const nodes = [...graph.nodes];
-  const rootIndex = nodes.findIndex((node) => node.id === graph.root_id);
-  const root = rootIndex >= 0 ? nodes.splice(rootIndex, 1)[0] : nodes.shift();
-  const positions = new Map();
-  if (!root) return positions;
-  positions.set(root.id, { x: 450, y: 270 });
-  nodes.sort((a, b) => a.name.localeCompare(b.name));
-  const angles =
-    nodes.length === 1
-      ? [0]
-      : nodes.map((_, index) => -Math.PI / 2 + (Math.PI * 2 * index) / nodes.length);
-  nodes.forEach((node, index) => {
-    const angle = angles[index];
-    const radiusX = nodes.length <= 2 ? 265 : 285;
-    const radiusY = nodes.length <= 2 ? 155 : 185;
-    positions.set(node.id, {
-      x: 450 + Math.cos(angle) * radiusX,
-      y: 270 + Math.sin(angle) * radiusY,
-    });
-  });
-  return positions;
-}
-
 function renderGraph() {
-  const graph = state.graph;
-  if (!graph || !graph.nodes.length) {
-    elements.edgeLayer.innerHTML = "";
-    elements.nodeLayer.innerHTML = "";
-    elements.graphEmpty.hidden = false;
-    elements.graphDescription.textContent = "Select a formula to build its local dependency map.";
-    return;
-  }
-
-  elements.graphEmpty.hidden = true;
-  const positions = graphPositions(graph);
-  const connectedIds = new Set([graph.root_id]);
-  graph.edges.forEach((edge) => {
-    connectedIds.add(edge.source_id);
-    connectedIds.add(edge.target_id);
+  window.MathernetGraph?.render(state.graph, {
+    onSelect: selectFormula,
+    selectedId: state.selectedId,
   });
-
-  elements.edgeLayer.innerHTML = graph.edges
-    .map((edge) => {
-      const start = positions.get(edge.source_id);
-      const end = positions.get(edge.target_id);
-      if (!start || !end) return "";
-      const dx = end.x - start.x;
-      const dy = end.y - start.y;
-      const distance = Math.max(1, Math.hypot(dx, dy));
-      const ux = dx / distance;
-      const uy = dy / distance;
-      const startX = start.x + ux * 92;
-      const startY = start.y + uy * 39;
-      const endX = end.x - ux * 102;
-      const endY = end.y - uy * 43;
-      const curve = Math.min(34, distance * 0.1);
-      const controlX = (startX + endX) / 2 - uy * curve;
-      const controlY = (startY + endY) / 2 + ux * curve;
-      const active = edge.source_id === graph.root_id || edge.target_id === graph.root_id;
-      return `
-        <path
-          class="graph-edge ${edge.requires_user_confirmation ? "pending" : ""} ${active ? "is-active" : "is-muted"}"
-          d="M ${startX} ${startY} Q ${controlX} ${controlY} ${endX} ${endY}"
-          data-edge-id="${escapeHTML(edge.id)}"
-        ></path>
-      `;
-    })
-    .join("");
-
-  elements.nodeLayer.innerHTML = graph.nodes
-    .map((node) => {
-      const position = positions.get(node.id);
-      if (!position) return "";
-      return `
-        <g
-          class="graph-node ${node.id === graph.root_id ? "is-selected" : ""}"
-          transform="translate(${position.x} ${position.y})"
-          role="button"
-          tabindex="0"
-          aria-label="Inspect ${escapeHTML(node.name)}"
-          data-node-id="${escapeHTML(node.id)}"
-        >
-          <rect class="node-surface" x="-96" y="-40" width="192" height="80" rx="12"></rect>
-          <rect class="node-accent" x="-96" y="-40" width="5" height="80" rx="3"></rect>
-          <text class="node-name" x="-76" y="-8">${escapeHTML(truncate(node.name, 23))}</text>
-          <text class="node-formula" x="-76" y="19">${escapeHTML(truncate(node.display, 29))}</text>
-        </g>
-      `;
-    })
-    .join("");
-
-  const edgeLabel = graph.edges.length === 1 ? "relationship" : "relationships";
-  elements.graphDescription.textContent = `${graph.nodes.length} formulas and ${graph.edges.length} ${edgeLabel} shown around ${graph.nodes.find((node) => node.id === graph.root_id)?.name || "the selected formula"}.`;
 }
 
 function renderOverview() {
@@ -391,7 +318,11 @@ function renderOverview() {
   elements.overviewContent.innerHTML = `
     <section class="inspector-section">
       <span class="section-label">Formula identity</span>
-      <code class="formula-display">${escapeHTML(card.display)}</code>
+      <div
+        class="formula-display formula-latex"
+        role="math"
+        aria-label="${escapeHTML(formulaValue(card) || card.display)}"
+      >${latexMarkup(formulaValue(card), card.display, true)}</div>
       <p class="body-copy">${escapeHTML(ai.summary)}</p>
     </section>
     <section class="inspector-section">
@@ -558,12 +489,16 @@ function renderInspector() {
   if (!card) {
     elements.inspectorTitle.textContent = "Select a formula";
     elements.inspectorFormula.textContent = "Choose an item from the library or graph.";
+    elements.inspectorFormula.removeAttribute("role");
+    elements.inspectorFormula.removeAttribute("aria-label");
     elements.inspectorStatus.textContent = "No selection";
     elements.inspectorStatus.className = "status-badge neutral";
   } else {
     const formula = card.formula;
     elements.inspectorTitle.textContent = formula.name;
-    elements.inspectorFormula.textContent = card.display;
+    elements.inspectorFormula.setAttribute("role", "math");
+    elements.inspectorFormula.setAttribute("aria-label", formulaValue(card) || card.display);
+    elements.inspectorFormula.innerHTML = latexMarkup(formulaValue(card), card.display);
     elements.inspectorStatus.textContent = statusLabels[formula.status] || formula.status;
     elements.inspectorStatus.className = `status-badge ${formula.status}`;
   }
@@ -577,18 +512,6 @@ function renderAll() {
   renderLibrary();
   renderGraph();
   renderInspector();
-  renderMobilePanel();
-}
-
-function renderMobilePanel() {
-  document.querySelectorAll("[data-panel]").forEach((panel) => {
-    panel.classList.toggle("is-mobile-active", panel.dataset.panel === state.mobilePanel);
-  });
-  document.querySelectorAll("[data-mobile-panel]").forEach((button) => {
-    const active = button.dataset.mobilePanel === state.mobilePanel;
-    button.classList.toggle("is-active", active);
-    button.setAttribute("aria-pressed", String(active));
-  });
 }
 
 function setTab(tab, focus = true) {
@@ -634,7 +557,7 @@ async function loadFormulas({ focusFirst = false } = {}) {
     renderLibrary();
     syncUrl();
     if (focusFirst && state.formulas[0]) {
-      await selectFormula(state.formulas[0].id, { moveMobile: true });
+      await selectFormula(state.formulas[0].id);
     }
   } catch (error) {
     if (requestId !== state.libraryRequest) return;
@@ -663,18 +586,13 @@ async function loadSelection(formulaId) {
   syncUrl();
 }
 
-async function selectFormula(formulaId, { moveMobile = false } = {}) {
+async function selectFormula(formulaId) {
   if (state.selectedId && state.selectedId !== formulaId && state.notesDirty) {
     const leave = window.confirm("You have an unsaved note. Leave this formula without saving?");
     if (!leave) return;
   }
   try {
     await loadSelection(formulaId);
-    if (moveMobile && window.matchMedia("(max-width: 920px)").matches) {
-      state.mobilePanel = "graph";
-      renderMobilePanel();
-      syncUrl();
-    }
   } catch (error) {
     showToast(error.message, "error");
   }
@@ -718,9 +636,17 @@ async function submitLearn(event) {
     closeDialog(elements.learnDialog);
     await loadFormulas();
     await loadSelection(result.formula.formula.id);
-    state.mobilePanel = window.matchMedia("(max-width: 920px)").matches ? "inspector" : state.mobilePanel;
-    renderMobilePanel();
     showToast(result.created ? "Formula card created." : "Existing formula card opened.");
+    for (const warning of result.warnings || []) {
+      showToast(warning, "notice");
+    }
+    const unresolvedCount = result.unresolved_dependencies?.length || 0;
+    if (unresolvedCount) {
+      showToast(
+        `${unresolvedCount} suggested prerequisite${unresolvedCount === 1 ? " was" : "s were"} not in the local library.`,
+        "notice",
+      );
+    }
     await loadHealth();
   } catch (error) {
     elements.learnError.textContent =
@@ -872,24 +798,7 @@ function bindEvents() {
 
   elements.formulaList.addEventListener("click", (event) => {
     const row = event.target.closest("[data-formula-id]");
-    if (row) selectFormula(row.dataset.formulaId, { moveMobile: true });
-  });
-
-  elements.nodeLayer.addEventListener("click", (event) => {
-    const node = event.target.closest("[data-node-id]");
-    if (!node) return;
-    selectFormula(node.dataset.nodeId, { moveMobile: true });
-    if (window.matchMedia("(max-width: 920px)").matches) {
-      state.mobilePanel = "inspector";
-      renderMobilePanel();
-    }
-  });
-
-  elements.nodeLayer.addEventListener("keydown", (event) => {
-    const node = event.target.closest("[data-node-id]");
-    if (!node || !["Enter", " "].includes(event.key)) return;
-    event.preventDefault();
-    selectFormula(node.dataset.nodeId);
+    if (row) selectFormula(row.dataset.formulaId);
   });
 
   document.querySelectorAll("[data-tab]").forEach((button) => {
@@ -910,14 +819,6 @@ function bindEvents() {
         event.preventDefault();
         setTab(tabs[tabs.length - 1].dataset.tab);
       }
-    });
-  });
-
-  document.querySelectorAll("[data-mobile-panel]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.mobilePanel = button.dataset.mobilePanel;
-      renderMobilePanel();
-      syncUrl();
     });
   });
 

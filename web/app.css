@@ -24,7 +24,6 @@
   --font-display: "Source Serif 4", "Iowan Old Style", Georgia, serif;
   --font-ui: "Atkinson Hyperlegible", "Avenir Next", "Segoe UI", sans-serif;
   --header-height: 72px;
-  --mobile-tabs-height: 58px;
   --radius-control: 6px;
   --radius-dialog: 10px;
   --radius-node: 12px;
@@ -94,16 +93,17 @@ html[data-theme="dark"] {
 }
 
 html {
-  min-width: 320px;
+  min-width: 1100px;
   background: var(--canvas);
   scroll-behavior: smooth;
 }
 
 body {
-  min-width: 320px;
+  min-width: 1100px;
   min-height: 100dvh;
   margin: 0;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   background: var(--canvas);
   color: var(--ink);
   font-family: var(--font-ui);
@@ -209,11 +209,11 @@ svg {
 .icon-button svg,
 .input-icon,
 .brand-mark svg,
-.mobile-tab svg,
 .inspector-empty svg,
 .graph-empty svg,
 .source-link svg,
-.edge-action svg {
+.edge-action svg,
+.toast-icon svg {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -223,9 +223,9 @@ svg {
 
 .button svg,
 .icon-button svg,
-.mobile-tab svg,
 .source-link svg,
-.edge-action svg {
+.edge-action svg,
+.toast-icon svg {
   width: 18px;
   height: 18px;
   flex: 0 0 auto;
@@ -392,7 +392,6 @@ textarea::placeholder {
 .segment,
 .inspector-tab,
 .formula-row,
-.mobile-tab,
 .status-option,
 .edge-action {
   border: 0;
@@ -409,7 +408,6 @@ textarea::placeholder {
 .icon-button:active,
 .segment:active,
 .formula-row:active,
-.mobile-tab:active,
 .status-option:active,
 .edge-action:active {
   transform: scale(0.96);
@@ -488,6 +486,16 @@ textarea::placeholder {
   background: var(--surface-soft);
 }
 
+.icon-button-compact {
+  width: 34px;
+  height: 34px;
+}
+
+.icon-button-compact svg {
+  width: 17px;
+  height: 17px;
+}
+
 .theme-icon-sun {
   display: none;
 }
@@ -499,10 +507,6 @@ html[data-theme="dark"] .theme-icon-sun {
 
 html[data-theme="dark"] .theme-icon-sun {
   display: block;
-}
-
-.mobile-tabs {
-  display: none;
 }
 
 .workspace {
@@ -795,74 +799,86 @@ h3 {
   gap: 8px;
 }
 
+.graph-tool-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 4px;
+  border-left: 1px solid var(--line);
+}
+
 .graph-stage {
   position: relative;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  background: var(--canvas);
 }
 
 .graph-canvas {
+  display: block;
   width: 100%;
   height: 100%;
   min-height: 360px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.graph-canvas:active {
+  cursor: grabbing;
 }
 
 .graph-ground {
   fill: var(--canvas);
 }
 
-.graph-grid {
-  color: var(--line);
-}
-
-.grid-dot {
-  fill: currentColor;
-  opacity: 0.54;
-}
-
 .graph-edge {
   fill: none;
-  stroke: var(--verified);
-  stroke-width: 2;
-  marker-end: url(#arrow-active);
+  stroke: color-mix(in srgb, var(--verified) 70%, var(--line));
+  stroke-width: 1.8;
+  stroke-linecap: round;
   transition:
     opacity var(--motion-base) var(--ease),
+    stroke var(--motion-base) var(--ease),
     stroke-width var(--motion-base) var(--ease);
 }
 
 .graph-edge.pending {
   stroke: var(--pending);
-  stroke-dasharray: 7 6;
-  marker-end: url(#arrow-pending);
+  stroke-dasharray: 5 7;
 }
 
-.graph-edge.is-muted {
-  opacity: 0.28;
+.graph-edge.is-dimmed {
+  opacity: 0.16;
 }
 
 .graph-edge.is-active {
-  stroke-width: 3;
-}
-
-.arrow-head {
-  fill: var(--verified);
-}
-
-.arrow-head.pending {
-  fill: var(--pending);
+  stroke-width: 2.6;
+  opacity: 1;
 }
 
 .graph-node {
   cursor: pointer;
-  transform-box: fill-box;
-  transform-origin: center;
+  outline: none;
+}
+
+.graph-node .node-hit {
+  fill: transparent;
+}
+
+.graph-node .node-halo {
+  fill: color-mix(in srgb, var(--signal) 10%, transparent);
+  opacity: 0;
+  transition:
+    opacity var(--motion-base) var(--ease),
+    r var(--motion-base) var(--ease);
 }
 
 .graph-node .node-surface {
   fill: var(--surface);
-  stroke: var(--line-strong);
-  stroke-width: 1.5;
+  stroke: color-mix(in srgb, var(--signal) 58%, var(--line-strong));
+  stroke-width: 2;
   transition:
     fill var(--motion-base) var(--ease),
     stroke var(--motion-base) var(--ease),
@@ -870,44 +886,80 @@ h3 {
     filter var(--motion-base) var(--ease);
 }
 
-.graph-node .node-accent {
-  fill: var(--line-strong);
-  transition: fill var(--motion-base) var(--ease);
+.graph-node.status-learning .node-surface {
+  stroke: color-mix(in srgb, var(--pending) 68%, var(--line-strong));
+}
+
+.graph-node.status-reviewed .node-surface {
+  stroke: color-mix(in srgb, var(--verified) 76%, var(--line-strong));
+}
+
+.graph-node.status-needs_review .node-surface {
+  stroke: color-mix(in srgb, var(--danger) 70%, var(--line-strong));
 }
 
 .graph-node .node-name {
   fill: var(--ink);
   font-family: var(--font-display);
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 650;
+  paint-order: stroke;
+  stroke: var(--canvas);
+  stroke-width: 5px;
+  stroke-linejoin: round;
   pointer-events: none;
 }
 
-.graph-node .node-formula {
-  fill: var(--muted);
-  font-family: var(--font-display);
-  font-size: 13px;
+.graph-node .node-math {
+  overflow: visible;
   pointer-events: none;
 }
 
-.graph-node:hover .node-surface {
+.graph-node .node-math-body {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: 100%;
+  min-height: 56px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: none;
+}
+
+.graph-node .node-math-body .katex {
+  font-size: 1.06em;
+  white-space: nowrap;
+}
+
+.graph-node:hover .node-halo,
+.graph-node.is-neighbor .node-halo,
+.graph-node.is-selected .node-halo {
+  opacity: 1;
+}
+
+.graph-node:hover .node-surface,
+.graph-node.is-neighbor .node-surface {
   stroke: var(--signal);
+  stroke-width: 2.6;
 }
 
 .graph-node.is-selected .node-surface {
   fill: var(--signal-soft);
   stroke: var(--signal);
-  stroke-width: 2.5;
-  filter: drop-shadow(0 8px 13px rgb(23 35 31 / 0.13));
+  stroke-width: 3;
+  filter: drop-shadow(0 7px 12px color-mix(in srgb, var(--signal) 22%, transparent));
 }
 
-.graph-node.is-selected .node-accent {
-  fill: var(--signal);
+.graph-node.is-dimmed {
+  opacity: 0.25;
 }
 
-.graph-node:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 4px;
+.graph-node:focus-visible .node-halo {
+  opacity: 1;
+  stroke: var(--focus);
+  stroke-width: 3;
 }
 
 .graph-empty {
@@ -1000,6 +1052,15 @@ h3 {
   color: var(--muted);
   font-family: var(--font-display);
   font-size: 15px;
+}
+
+.inspector-formula .katex {
+  color: var(--ink);
+  font-size: 1.08em;
+}
+
+.inspector-formula .katex-display {
+  margin: 0;
 }
 
 .status-badge {
@@ -1133,6 +1194,29 @@ h3 {
   font-family: var(--font-display);
   font-size: 19px;
   line-height: 1.5;
+}
+
+.formula-display.formula-latex {
+  display: flex;
+  align-items: center;
+  min-height: 66px;
+  overflow-x: auto;
+}
+
+.formula-display .katex-display {
+  width: 100%;
+  margin: 0;
+  text-align: center;
+}
+
+.formula-display .katex {
+  font-size: 1.18em;
+}
+
+.formula-display .katex-html {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
 }
 
 .body-copy {
@@ -1486,6 +1570,11 @@ h3 {
   color: var(--danger);
 }
 
+.toast.notice .toast-icon {
+  background: var(--pending-soft);
+  color: var(--pending);
+}
+
 .toast-message {
   margin: 0;
   font-size: 14px;
@@ -1533,212 +1622,6 @@ h3 {
 
   .button .optional-label {
     display: none;
-  }
-}
-
-@media (max-width: 920px) {
-  body {
-    overflow: hidden;
-  }
-
-  .app-header {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 10px;
-    min-height: 118px;
-    padding: 10px 14px;
-  }
-
-  .brand small {
-    display: none;
-  }
-
-  .global-search {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    width: 100%;
-  }
-
-  .header-actions {
-    grid-column: 2;
-    grid-row: 1;
-  }
-
-  .header-actions .button-secondary {
-    display: none;
-  }
-
-  .mobile-tabs {
-    position: relative;
-    z-index: 15;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    height: var(--mobile-tabs-height);
-    border-bottom: 1px solid var(--line);
-    background: var(--surface);
-  }
-
-  .mobile-tab {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 0;
-    gap: 7px;
-    border-radius: 0;
-    background: transparent;
-    color: var(--muted);
-    font-size: 13px;
-    font-weight: 700;
-  }
-
-  .mobile-tab.is-active {
-    background: var(--signal-soft);
-    color: var(--signal);
-    box-shadow: inset 0 -2px 0 var(--signal);
-  }
-
-  .segment,
-  .status-option,
-  .edge-action {
-    min-height: 44px;
-  }
-
-  .brand {
-    min-height: 44px;
-  }
-
-  .workspace {
-    display: block;
-    height: calc(100dvh - 118px - var(--mobile-tabs-height));
-  }
-
-  .panel {
-    display: none;
-    width: 100%;
-    height: 100%;
-    border: 0;
-  }
-
-  .panel.is-mobile-active {
-    display: flex;
-  }
-
-  .graph-panel.is-mobile-active {
-    display: grid;
-  }
-
-  .graph-toolbar {
-    padding-inline: 16px;
-  }
-
-  .graph-footer {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 7px;
-    padding-inline: 16px;
-  }
-
-  .inspector-header {
-    min-height: 106px;
-  }
-}
-
-@media (max-width: 560px) {
-  .app-header {
-    min-height: 120px;
-  }
-
-  .brand-mark {
-    width: 38px;
-    height: 38px;
-  }
-
-  .brand strong {
-    font-size: 19px;
-  }
-
-  .header-actions {
-    gap: 6px;
-  }
-
-  .header-actions .icon-button {
-    width: 44px;
-    height: 44px;
-  }
-
-  .global-search {
-    grid-template-columns: minmax(0, 1fr) 44px;
-  }
-
-  .global-search .button {
-    width: 44px;
-    padding: 0;
-    font-size: 0;
-  }
-
-  .global-search .button::after {
-    content: "→";
-    font-size: 18px;
-  }
-
-  .workspace {
-    height: calc(100dvh - 120px - var(--mobile-tabs-height));
-  }
-
-  .panel-heading,
-  .graph-toolbar,
-  .inspector-header {
-    padding-inline: 14px;
-  }
-
-  .library-controls {
-    padding-inline: 14px;
-  }
-
-  .panel-footer {
-    padding-inline: 14px;
-  }
-
-  .graph-toolbar {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .graph-actions,
-  .segmented-control.compact {
-    width: 100%;
-  }
-
-  .graph-canvas {
-    min-height: 300px;
-  }
-
-  .graph-legend {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .inspector-header {
-    align-items: flex-start;
-  }
-
-  .inspector-header .status-badge {
-    margin-top: 2px;
-  }
-
-  .inspector-section,
-  .source-item,
-  .edge-item {
-    padding-inline: 14px;
-  }
-
-  .dialog-actions {
-    align-items: stretch;
-    flex-direction: column-reverse;
-  }
-
-  .dialog-actions .button {
-    width: 100%;
   }
 }
 

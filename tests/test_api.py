@@ -41,6 +41,27 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(card.payload["formula"]["name"], "Euler's identity")
         self.assertIn("/api/edges/{edge_id}/confirm", openapi_document()["paths"])
 
+    def test_learn_reuses_an_existing_formula_with_a_success_status(self):
+        class Agent:
+            def __init__(self, service):
+                self.service = service
+
+            def learn(self, query):
+                from mathernet.agent import LearnResult
+
+                node = self.service.repository.find_formula(query)
+                return LearnResult(node=node, created=False)
+
+        self.service.agent = Agent(self.service)
+        response = handle_api_request(
+            self.service,
+            "POST",
+            "/api/learn",
+            {"query": "Euler's identity"},
+        )
+        self.assertEqual(response.status, 200)
+        self.assertFalse(response.payload["created"])
+
     def test_edge_requires_confirmation_then_accepts(self):
         created = handle_api_request(
             self.service,

@@ -45,6 +45,10 @@ class ModelsAndStorageTests(unittest.TestCase):
 
     def test_latex_display_uses_terminal_friendly_notation(self):
         self.assertEqual(latex_to_ascii(r"e^{i\pi}+1=0"), "e^(ipi)+1=0")
+        self.assertEqual(
+            latex_to_ascii(r"\text{quadratic formula}"),
+            "quadratic formula",
+        )
 
 
 if __name__ == "__main__":

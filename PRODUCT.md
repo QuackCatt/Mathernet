@@ -1,14 +1,12 @@
 # Product
 
-<!-- impeccable:product-schema 1 -->
-
 ## Platform
 
 web
 
 ## Stack
 
-Delegated: dependency-free HTML, CSS, and JavaScript served by the existing local Python JSON API.
+Delegated: HTML, CSS, and JavaScript served by the existing local Python JSON API, with locally vendored KaTeX for formula rendering.
 
 ## Users
 
@@ -36,9 +34,11 @@ University mathematics learners who want to understand formulas as connected ide
 
 ## Operating Context
 
-- Local-first desktop and laptop use, with a responsive mobile reading and review mode.
+- Local-first desktop and laptop use with a desktop working layout.
 - Typical workflow: search the library, inspect a formula graph, review sources, edit notes, and resolve suggested dependencies.
 - The first Web surface is the working application, not a marketing page.
+- Formula expressions are rendered from stored LaTeX with KaTeX; ASCII display values are compatibility fallbacks only.
+- The dependency graph is an interactive force-directed canvas with dragging, panning, zooming, neighbour highlighting, and keyboard-selectable nodes.
 
 ## Accessibility
 

@@ -6,17 +6,14 @@ import shutil
 import sys
 from pathlib import Path
 
-from .agent import FormulaAgent
 from .api import create_server
 from .config import Settings
 from .errors import MathernetError
 from .evaluation import evaluate_graph, load_gold_cases, persistence_check
-from .llm import OpenAIResponsesSynthesizer, RuleBasedSynthesizer
 from .models import EdgeRelation, FormulaStatus, GraphDocument, VerificationStatus
 from .normalization import latex_to_ascii
 from .repository import GraphRepository
-from .retrieval import provider_from_settings
-from .services import MathernetService
+from .services import build_service
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -157,25 +154,7 @@ def dispatch(args: argparse.Namespace) -> int:
     if args.command == "evaluate":
         return run_evaluation(repository, args.gold, args.output)
     if args.command == "learn":
-        synthesizer = (
-            OpenAIResponsesSynthesizer(
-                settings.openai_api_key,
-                settings.openai_model,
-                settings.request_timeout_seconds,
-            )
-            if settings.openai_api_key
-            else RuleBasedSynthesizer()
-        )
-        service = MathernetService(
-            repository,
-            FormulaAgent(
-                repository,
-                provider_from_settings(settings),
-                synthesizer,
-                settings.approved_publishers,
-            ),
-        )
-        learned = service.learn(args.query)
+        learned = build_service(settings).learn(args.query)
         result_node = learned["formula"]["formula"]
         action = "Created" if learned["created"] else "Found existing"
         print(f"{action}: {result_node['name']} ({result_node['id']})")
@@ -207,20 +186,26 @@ def initialize() -> int:
 
 
 def doctor(settings: Settings) -> int:
+    if settings.mcp_transport == "stdio":
+        mcp_ready = bool(settings.mcp_command)
+        mcp_detail = "stdio configured" if mcp_ready else "stdio command not configured"
+    elif settings.mcp_transport == "http":
+        mcp_ready = bool(settings.mcp_http_url)
+        mcp_detail = "http configured" if mcp_ready else "http URL not configured"
+    else:
+        mcp_ready = False
+        mcp_detail = "transport must be stdio or http"
+
     checks = [
         ("Python", True, sys.version.split()[0]),
         ("Local data path", True, str(settings.data_path.expanduser())),
-        (
-            "MCP Web Search",
-            bool(settings.mcp_command or settings.mcp_http_url),
-            f"{settings.mcp_transport} configured"
-            if settings.mcp_command or settings.mcp_http_url
-            else f"{settings.mcp_transport} not configured",
-        ),
+        ("MCP Web Search", mcp_ready, mcp_detail),
         (
             "Language model key",
-            bool(settings.openai_api_key),
-            "configured" if settings.openai_api_key else "not configured (offline synthesis only)",
+            True,
+            "configured"
+            if settings.openai_api_key
+            else "not configured; offline synthesis enabled",
         ),
         ("Approved publishers", bool(settings.approved_publishers), str(len(settings.approved_publishers))),
     ]
@@ -232,25 +217,7 @@ def doctor(settings: Settings) -> int:
 def serve_api(settings: Settings, host: str, port: int) -> int:
     if not 0 <= port <= 65535:
         raise MathernetError("port must be between 0 and 65535")
-    repository = GraphRepository(settings.data_path)
-    synthesizer = (
-        OpenAIResponsesSynthesizer(
-            settings.openai_api_key,
-            settings.openai_model,
-            settings.request_timeout_seconds,
-        )
-        if settings.openai_api_key
-        else RuleBasedSynthesizer()
-    )
-    service = MathernetService(
-        repository,
-        FormulaAgent(
-            repository,
-            provider_from_settings(settings),
-            synthesizer,
-            settings.approved_publishers,
-        ),
-    )
+    service = build_service(settings)
     server = create_server(service, host, port)
     address, actual_port = server.server_address[:2]
     print(f"Mathernet API listening at http://{address}:{actual_port}")

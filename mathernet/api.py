@@ -65,7 +65,8 @@ def handle_api_request(
             )
         if path == "/api/learn" and method == "POST":
             payload = _require_body(body, {"query"}, set())
-            return ApiResponse(201, service.learn(_required_string(payload, "query")))
+            result = service.learn(_required_string(payload, "query"))
+            return ApiResponse(201 if result["created"] else 200, result)
         if path == "/api/export" and method == "GET":
             return ApiResponse(200, service.export_graph())
 
@@ -360,7 +361,7 @@ class MathernetRequestHandler(BaseHTTPRequestHandler):
         self.send_header("X-Frame-Options", "DENY")
         self.send_header(
             "Content-Security-Policy",
-            "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; "
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src 'self' https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:; "
             "object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
         )
