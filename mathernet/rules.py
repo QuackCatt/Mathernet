@@ -159,13 +159,11 @@ def validate_formula_fields(
         max_items=MAX_TOPICS,
         item_max_length=100,
     )
-    source_ids = validate_identifier_list(
+    validate_identifier_list(
         sources,
         "formula.sources",
         max_items=MAX_SOURCES_PER_OBJECT,
     )
-    if not source_ids:
-        raise ValidationError("a formula card must reference at least one source")
 
 
 def validate_edge_fields(

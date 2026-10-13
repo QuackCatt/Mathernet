@@ -30,7 +30,7 @@ class FormulaAgent:
     def __init__(
         self,
         repository: GraphRepository,
-        search_provider: SearchProvider,
+        search_provider: SearchProvider | None,
         synthesizer: Synthesizer,
         approved_publishers: tuple[str, ...],
     ):
@@ -49,20 +49,31 @@ class FormulaAgent:
         if existing is not None:
             return LearnResult(node=existing, created=False)
 
-        if hasattr(self.search_provider, "__enter__"):
-            with self.search_provider as provider:
-                raw_results = provider.search(query, limit=5)
+        direct_mode = self.search_provider is None
+        if direct_mode:
+            raw_results = []
         else:
-            raw_results = self.search_provider.search(query, limit=5)
+            if hasattr(self.search_provider, "__enter__"):
+                with self.search_provider as provider:
+                    raw_results = provider.search(query, limit=5)
+            else:
+                raw_results = self.search_provider.search(query, limit=5)
         results = filter_approved_sources(raw_results, self.approved_publishers)
-        if not results:
+        if not direct_mode and not results:
             raise RefusalError(
                 "Mathernet found no reliable approved source for this formula, so it will not invent an explanation.",
                 RefusalReason.NO_RELIABLE_SOURCE.value,
             )
 
         synthesis = self.synthesizer.synthesize(query, results)
-        source_records = self._validate_and_store_sources(synthesis, results)
+        citation_results = synthesis.sources if direct_mode else results
+        if direct_mode and not citation_results:
+            synthesis.ai_module.derivation_steps = []
+            synthesis.dependencies = []
+            synthesis.warnings.append(
+                "AI answer saved without source citations; verify important claims before relying on them."
+            )
+        source_records = self._validate_and_store_sources(synthesis, citation_results)
         formula_id = stable_id("formula", formula_key(query))
         node = self.repository.add_formula(
             formula_id=formula_id,

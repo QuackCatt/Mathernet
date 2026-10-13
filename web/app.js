@@ -13,6 +13,8 @@ const state = {
   pendingRejectEdgeId: null,
   libraryRequest: 0,
   selectionRequest: 0,
+  gateway: null,
+  firstRun: true,
 };
 
 const elements = {
@@ -43,6 +45,15 @@ const elements = {
   confirmReject: document.querySelector("#confirm-reject"),
   toastRegion: document.querySelector("#toast-region"),
   themeToggle: document.querySelector("#theme-toggle"),
+  settingsDialog: document.querySelector("#settings-dialog"),
+  settingsForm: document.querySelector("#settings-form"),
+  settingsProvider: document.querySelector("#settings-provider"),
+  settingsApiKey: document.querySelector("#settings-api-key"),
+  settingsModel: document.querySelector("#settings-model"),
+  settingsError: document.querySelector("#settings-error"),
+  settingsAiState: document.querySelector("#settings-ai-state"),
+  settingsAiMessage: document.querySelector("#settings-ai-message"),
+  settingsSave: document.querySelector("#settings-save"),
 };
 
 const statusLabels = {
@@ -618,6 +629,110 @@ function closeDialog(dialog) {
   if (dialog.open) dialog.close();
 }
 
+function setSettingsState(element, kind, label) {
+  if (!element) return;
+  element.textContent = label;
+  element.classList.toggle("is-connected", kind === "success");
+  element.classList.toggle("is-error", kind === "error");
+}
+
+function providerPreset(provider) {
+  return state.gateway?.provider_presets?.find((preset) => preset.id === provider);
+}
+
+function syncProviderOptions(provider) {
+  elements.settingsProvider.value = provider || "";
+  document.querySelectorAll(".provider-radio").forEach((radio) => {
+    radio.checked = radio.value === provider;
+    radio.closest(".provider-option")?.classList.toggle("is-selected", radio.checked);
+  });
+}
+
+function gatewayPayload() {
+  return {
+    provider: elements.settingsProvider.value,
+    api_key: elements.settingsApiKey.value.trim(),
+    model: elements.settingsModel.value.trim(),
+  };
+}
+
+function applyGatewayConfig(config) {
+  state.gateway = config;
+  state.firstRun = Boolean(config.first_run);
+  syncProviderOptions(config.provider || "");
+  elements.settingsModel.value = config.model || "";
+  elements.settingsApiKey.value = "";
+  elements.settingsApiKey.placeholder = config.api_key_hint ? `Saved key ${config.api_key_hint}` : "Paste a new key";
+  setSettingsState(elements.settingsAiState, config.ai_configured ? "success" : "idle", config.ai_configured ? "Connected" : "Not connected");
+}
+
+async function loadGatewaySettings() {
+  try {
+    applyGatewayConfig(await api("/api/gateway"));
+    if (state.firstRun) {
+      elements.settingsDialog.showModal();
+      window.setTimeout(() => document.querySelector(".provider-radio")?.focus(), 0);
+    }
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function openSettingsDialog() {
+  elements.settingsError.textContent = "";
+  elements.settingsAiMessage.textContent = "";
+  elements.settingsDialog.showModal();
+}
+
+function validateGatewayPayload(payload) {
+  if (!payload.provider) return "Choose an AI provider.";
+  if (!payload.api_key && !state.gateway?.api_key_hint) return "Enter an API key for the selected provider.";
+  if (!payload.model) return "Enter the model you want to use.";
+  return "";
+}
+
+async function saveGatewaySettings(silent = false) {
+  const payload = gatewayPayload();
+  const error = validateGatewayPayload(payload);
+  elements.settingsError.textContent = error;
+  if (error) return false;
+  setBusy(elements.settingsSave, true, "Saving…");
+  try {
+    applyGatewayConfig(await api("/api/gateway", { method: "PATCH", body: JSON.stringify(payload) }));
+    if (!silent) {
+      closeDialog(elements.settingsDialog);
+      showToast("Connection settings saved locally.");
+    }
+    return true;
+  } catch (requestError) {
+    elements.settingsError.textContent = requestError.message;
+    return false;
+  } finally {
+    setBusy(elements.settingsSave, false);
+  }
+}
+
+async function testGatewayConnection() {
+  if (!(await saveGatewaySettings(true))) return;
+  const button = document.querySelector("#test-ai");
+  const message = elements.settingsAiMessage;
+  setBusy(button, true, "Testing…");
+  message.textContent = "";
+  message.className = "settings-status";
+  try {
+    await api("/api/gateway/test-ai", { method: "POST" });
+    message.textContent = "Connection is ready.";
+    message.classList.add("is-success");
+    setSettingsState(elements.settingsAiState, "success", "Connected");
+  } catch (error) {
+    message.textContent = error.message;
+    message.classList.add("is-error");
+    setSettingsState(elements.settingsAiState, "error", "Check settings");
+  } finally {
+    setBusy(button, false);
+  }
+}
+
 async function submitLearn(event) {
   event.preventDefault();
   const query = elements.learnQuery.value.trim();
@@ -651,7 +766,7 @@ async function submitLearn(event) {
   } catch (error) {
     elements.learnError.textContent =
       error.reasonCode === "no_reliable_source"
-        ? "No approved source was found. Try a more standard formula name or configure MCP Web Search."
+        ? "The configured source tool returned no usable material. Try another formula name or leave MCP empty to use the AI provider directly."
         : error.message;
     elements.learnQuery.focus();
   } finally {
@@ -828,11 +943,33 @@ function bindEvents() {
 
   document.querySelectorAll("[data-close-dialog]").forEach((button) => {
     button.addEventListener("click", () => {
+      if (button.dataset.closeDialog === "settings-dialog" && state.firstRun) {
+        showToast("Save a connection setup before entering the workspace.", "notice");
+        return;
+      }
       closeDialog(document.querySelector(`#${button.dataset.closeDialog}`));
     });
   });
 
   elements.learnForm.addEventListener("submit", submitLearn);
+  elements.settingsForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveGatewaySettings();
+  });
+  document.querySelector("#open-settings").addEventListener("click", openSettingsDialog);
+  document.querySelector("#test-ai").addEventListener("click", testGatewayConnection);
+  document.querySelectorAll(".provider-radio").forEach((radio) => {
+    radio.addEventListener("change", () => {
+      syncProviderOptions(radio.value);
+      const preset = providerPreset(radio.value);
+      if (preset?.default_model && !elements.settingsModel.value.trim()) {
+        elements.settingsModel.value = preset.default_model;
+      }
+    });
+  });
+  elements.settingsDialog.addEventListener("cancel", (event) => {
+    if (state.firstRun) event.preventDefault();
+  });
   elements.confirmReject.addEventListener("click", confirmReject);
   elements.themeToggle.addEventListener("click", () => {
     const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
@@ -895,6 +1032,7 @@ async function initialize() {
   restoreUrlState();
   bindEvents();
   renderAll();
+  await loadGatewaySettings();
   await Promise.all([loadHealth(), loadFormulas()]);
   const selected = state.selectedId || state.formulas[0]?.id;
   if (selected) {

@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#F3F6F2">
     <meta
       name="description"
-      content="Mathernet is a source-backed formula knowledge graph for connected mathematical learning."
+      content="Mathernet is an AI-assisted formula knowledge graph for connected mathematical learning."
     >
     <title>Mathernet</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -91,6 +91,10 @@
         <path d="M8 4H4v4M16 4h4v4M20 16v4h-4M4 16v4h4"></path>
         <path d="M9 9h6v6H9z"></path>
       </symbol>
+      <symbol id="icon-settings" viewBox="0 0 24 24">
+        <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z"></path>
+        <path d="M19.4 13.2a7.8 7.8 0 0 0 0-2.4l2-1.5-2-3.4-2.3.9a7.8 7.8 0 0 0-2.1-1.2L14.6 3h-4l-.4 2.6a7.8 7.8 0 0 0-2.1 1.2l-2.3-.9-2 3.4 2 1.5a7.8 7.8 0 0 0 0 2.4l-2 1.5 2 3.4 2.3-.9a7.8 7.8 0 0 0 2.1 1.2l.4 2.6h4l.4-2.6a7.8 7.8 0 0 0 2.1-1.2l2.3.9 2-3.4-2-1.5z"></path>
+      </symbol>
     </svg>
 
     <header class="app-header">
@@ -133,6 +137,9 @@
         <button class="icon-button" id="theme-toggle" type="button" aria-label="Use dark theme">
           <svg class="theme-icon theme-icon-moon" aria-hidden="true"><use href="#icon-moon"></use></svg>
           <svg class="theme-icon theme-icon-sun" aria-hidden="true"><use href="#icon-sun"></use></svg>
+        </button>
+        <button class="icon-button" id="open-settings" type="button" aria-label="Open connection settings">
+          <svg aria-hidden="true"><use href="#icon-settings"></use></svg>
         </button>
       </div>
     </header>
@@ -293,7 +300,7 @@
             <div class="inspector-empty" id="overview-empty">
               <svg aria-hidden="true"><use href="#icon-file"></use></svg>
               <h3>No formula selected</h3>
-              <p>Select a formula to read its source-backed explanation.</p>
+              <p>Select a formula to read its AI-generated explanation.</p>
             </div>
             <div id="overview-content" hidden></div>
           </section>
@@ -333,6 +340,100 @@
       </aside>
     </main>
 
+    <dialog class="dialog settings-dialog" id="settings-dialog" aria-labelledby="settings-title">
+      <form id="settings-form" novalidate>
+        <div class="dialog-header">
+          <div>
+            <p class="section-kicker">Settings</p>
+            <h2 id="settings-title">AI provider</h2>
+          </div>
+          <div class="dialog-header-actions">
+            <span class="settings-state" id="settings-ai-state">Not connected</span>
+            <button class="icon-button" id="settings-close" type="button" data-close-dialog="settings-dialog" aria-label="Close">
+              <svg aria-hidden="true"><use href="#icon-x"></use></svg>
+            </button>
+          </div>
+        </div>
+        <p class="dialog-copy">
+          Choose the model service Mathernet uses to explain formulas and build your knowledge graph.
+        </p>
+
+        <div class="provider-config">
+          <fieldset class="provider-selector">
+            <legend class="sr-only">Provider</legend>
+            <p class="provider-selector-label">Provider</p>
+            <select id="settings-provider" class="provider-select" name="provider">
+              <option value="">Select a provider</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="openai">OpenAI</option>
+              <option value="deepseek">DeepSeek</option>
+              <option value="qwen">Qwen</option>
+              <option value="openrouter">OpenRouter</option>
+            </select>
+            <div class="provider-options">
+              <label class="provider-option">
+                <input class="provider-radio" type="radio" name="provider-option" value="anthropic">
+                <span class="provider-mark">A</span>
+                <span class="provider-name">Anthropic</span>
+                <svg class="provider-check" aria-hidden="true"><use href="#icon-check"></use></svg>
+              </label>
+              <label class="provider-option">
+                <input class="provider-radio" type="radio" name="provider-option" value="openai">
+                <span class="provider-mark">O</span>
+                <span class="provider-name">OpenAI</span>
+                <svg class="provider-check" aria-hidden="true"><use href="#icon-check"></use></svg>
+              </label>
+              <label class="provider-option">
+                <input class="provider-radio" type="radio" name="provider-option" value="deepseek">
+                <span class="provider-mark">D</span>
+                <span class="provider-name">DeepSeek</span>
+                <svg class="provider-check" aria-hidden="true"><use href="#icon-check"></use></svg>
+              </label>
+              <label class="provider-option">
+                <input class="provider-radio" type="radio" name="provider-option" value="qwen">
+                <span class="provider-mark">Q</span>
+                <span class="provider-name">Qwen</span>
+                <svg class="provider-check" aria-hidden="true"><use href="#icon-check"></use></svg>
+              </label>
+              <label class="provider-option">
+                <input class="provider-radio" type="radio" name="provider-option" value="openrouter">
+                <span class="provider-mark provider-mark-wide">OR</span>
+                <span class="provider-name">OpenRouter</span>
+                <svg class="provider-check" aria-hidden="true"><use href="#icon-check"></use></svg>
+              </label>
+            </div>
+          </fieldset>
+
+          <section class="provider-form" aria-labelledby="provider-form-title">
+            <div class="provider-form-heading">
+              <div>
+                <p class="section-kicker">Access credentials</p>
+                <h3 id="provider-form-title">Connect your account</h3>
+              </div>
+            </div>
+            <div class="field">
+              <label for="settings-api-key">API key</label>
+              <input id="settings-api-key" name="api_key" type="password" autocomplete="off" placeholder="Paste a new key" spellcheck="false">
+              <p class="field-hint" id="settings-key-hint">Stored locally and never shown after saving.</p>
+            </div>
+            <div class="field">
+              <label for="settings-model">Model</label>
+              <input id="settings-model" name="model" type="text" autocomplete="off" placeholder="Choose a model after selecting a provider">
+            </div>
+            <p class="settings-status" id="settings-ai-message" role="status"></p>
+          </section>
+        </div>
+
+        <p class="settings-error" id="settings-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button class="button button-secondary" id="test-ai" type="button">Test connection</button>
+          <div class="dialog-action-spacer"></div>
+          <button class="button button-quiet" id="settings-cancel" type="button" data-close-dialog="settings-dialog">Cancel</button>
+          <button class="button button-primary" id="settings-save" type="submit">Save provider</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog class="dialog" id="learn-dialog" aria-labelledby="learn-title">
       <form id="learn-form" novalidate>
         <div class="dialog-header">
@@ -345,7 +446,7 @@
           </button>
         </div>
         <p class="dialog-copy">
-          Mathernet searches approved sources, creates a formula card, and keeps any dependency as a suggestion until you confirm it.
+          Mathernet asks your configured AI provider to create a formula card. Real citations are saved when supplied; any dependency remains a suggestion until you confirm it.
         </p>
         <div class="field">
           <label for="learn-query">Formula name or expression</label>

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from .agent import FormulaAgent, LearnResult
 from .config import Settings
 from .errors import ConflictError, NotFoundError, ValidationError
 from .llm import OpenAIResponsesSynthesizer, RuleBasedSynthesizer
+from .gateway import GatewayConfig, GatewayStore, ProviderGateway, SearchGateway
 from .models import (
     DependencyEdge,
     EdgeRelation,
@@ -16,6 +18,7 @@ from .models import (
     VerificationStatus,
 )
 from .normalization import formula_key, normalize_text
+from .providers import provider_catalog
 from .repository import GraphRepository
 from .retrieval import provider_from_settings
 from .rules import (
@@ -31,9 +34,101 @@ class LearningAgent(Protocol):
 
 
 class MathernetService:
-    def __init__(self, repository: GraphRepository, agent: LearningAgent | None = None):
+    def __init__(
+        self,
+        repository: GraphRepository,
+        agent: LearningAgent | None = None,
+        gateway_store: GatewayStore | None = None,
+    ):
         self.repository = repository
         self.agent = agent
+        self.gateway_store = gateway_store or GatewayStore()
+
+    def gateway_config(self) -> dict[str, Any]:
+        config = self.gateway_store.load()
+        providers = provider_catalog()
+        return {
+            **config.public_dict(),
+            "providers": [provider["id"] for provider in providers],
+            "provider_presets": providers,
+            "search_engines": ["google", "bing", "yahoo", "baidu"],
+            "first_run": not config.ai_configured,
+        }
+
+    def save_gateway_config(self, payload: dict[str, Any]) -> dict[str, Any]:
+        current = self.gateway_store.load()
+        payload = dict(payload)
+        aliases = {
+            "transport": "mcp_transport",
+            "command": "mcp_command",
+            "http_url": "mcp_http_url",
+            "tool_name": "mcp_tool_name",
+            "headers_json": "mcp_headers",
+        }
+        for source, target in aliases.items():
+            if source in payload and target not in payload:
+                payload[target] = payload[source]
+        fields = {
+            "provider", "api_key", "model", "api_format", "base_url", "endpoint_path",
+            "auth_style", "search_engine", "search_api_key",
+            "search_engine_id", "mcp_transport", "mcp_command", "mcp_http_url",
+            "mcp_tool_name", "mcp_headers",
+        }
+        values = {}
+        for field in fields:
+            value = payload.get(field, getattr(current, field))
+            if field in {"api_key", "search_api_key", "mcp_headers"} and not str(value).strip():
+                value = getattr(current, field)
+            values[field] = value
+        provider = str(values.get("provider", "")).strip().lower()
+        protocol_fields = {"api_format", "base_url", "endpoint_path", "auth_style"}
+        if provider and provider != current.provider and not protocol_fields.intersection(payload):
+            for field in protocol_fields:
+                values[field] = ""
+        search_engine = str(values.get("search_engine", "")).strip().lower()
+        if search_engine and search_engine not in {"google", "bing", "yahoo", "baidu"}:
+            raise ValidationError("unsupported search engine")
+        config = GatewayConfig(
+            provider=provider,
+            api_key=str(values.get("api_key", current.api_key)),
+            model=str(values.get("model", current.model)).strip(),
+            api_format=str(values.get("api_format", current.api_format)),
+            base_url=str(values.get("base_url", current.base_url)),
+            endpoint_path=str(values.get("endpoint_path", current.endpoint_path)),
+            auth_style=str(values.get("auth_style", current.auth_style)),
+            search_engine=search_engine,
+            search_api_key=str(values.get("search_api_key", current.search_api_key)),
+            search_engine_id=str(values.get("search_engine_id", current.search_engine_id)),
+            mcp_transport=str(values.get("mcp_transport", current.mcp_transport)).strip().lower(),
+            mcp_command=str(values.get("mcp_command", current.mcp_command)).strip(),
+            mcp_http_url=str(values.get("mcp_http_url", current.mcp_http_url)).strip(),
+            mcp_tool_name=str(values.get("mcp_tool_name", current.mcp_tool_name)).strip() or "search",
+            mcp_headers=str(values.get("mcp_headers", current.mcp_headers)).strip(),
+            configured_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        )
+        if config.provider and not config.model:
+            raise ValidationError("model is required when an AI provider is selected")
+        if config.provider:
+            config.resolved_provider()
+        self.gateway_store.save(config)
+        self._rebuild_agent(config)
+        return self.gateway_config()
+
+    def test_gateway_ai(self) -> dict[str, Any]:
+        return ProviderGateway(self.gateway_store.load()).test_connection()
+
+    def test_gateway_search(self) -> dict[str, Any]:
+        return SearchGateway(self.gateway_store.load()).test_connection()
+
+    def _rebuild_agent(self, config: GatewayConfig) -> None:
+        publishers = getattr(self.agent, "approved_publishers", ())
+        synthesizer = ProviderGateway(config) if config.ai_configured else RuleBasedSynthesizer()
+        self.agent = FormulaAgent(
+            self.repository,
+            SearchGateway(config).provider(),
+            synthesizer,
+            publishers,
+        )
 
     @property
     def revision(self) -> str:
@@ -368,19 +463,25 @@ class MathernetService:
 
 def build_service(settings: Settings) -> MathernetService:
     repository = GraphRepository(settings.data_path)
-    synthesizer = (
-        OpenAIResponsesSynthesizer(
-            settings.openai_api_key,
-            settings.openai_model,
-            settings.request_timeout_seconds,
+    gateway_store = GatewayStore(settings.search_cache_path.parent / "gateway.json")
+    config = gateway_store.load()
+    if not config.completed:
+        config = GatewayConfig(
+            provider="openai" if settings.openai_api_key else "",
+            api_key=settings.openai_api_key,
+            model=settings.openai_model,
+            search_engine="",
+            mcp_transport=settings.mcp_transport,
+            mcp_command=" ".join(settings.mcp_command),
+            mcp_http_url=settings.mcp_http_url,
+            mcp_tool_name=settings.mcp_tool_name,
+            mcp_headers=settings.mcp_headers,
         )
-        if settings.openai_api_key
-        else RuleBasedSynthesizer()
-    )
+    synthesizer = ProviderGateway(config, settings.request_timeout_seconds) if config.ai_configured else RuleBasedSynthesizer()
     agent = FormulaAgent(
         repository,
-        provider_from_settings(settings),
+        SearchGateway(config, settings.request_timeout_seconds).provider(),
         synthesizer,
         settings.approved_publishers,
     )
-    return MathernetService(repository, agent)
+    return MathernetService(repository, agent, gateway_store)

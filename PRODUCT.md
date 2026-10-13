@@ -16,20 +16,22 @@ University mathematics learners who want to understand formulas as connected ide
 
 - Find a formula or closely related name in a persistent local library.
 - See which formulas support or depend on the selected formula.
-- Read source-backed AI explanations without confusing generated content with personal understanding.
+- Read AI-generated formula explanations without confusing generated content with personal understanding.
 - Record a private study note and learning status.
 - Inspect every source and edit or explicitly confirm AI-suggested dependency edges.
-- Learn a new formula through configured MCP Web Search when a reliable source is available.
+- Learn a new formula directly through the configured AI provider, using its built-in web capability when available.
+- Optionally provide source material through a configured MCP tool.
 
 ## Product Truth
 
-- Mathernet is a local, source-backed formula knowledge-graph learning assistant.
+- Mathernet is a local, AI-assisted formula knowledge-graph learning assistant.
 - Formula cards contain separate AI and user modules.
-- Every formula and dependency edge must cite stored sources.
+- AI citations are stored only when the provider returns real source URLs; Mathernet never fabricates citations.
+- Dependency edges must cite stored sources. An answer without citations cannot create dependency edges.
 - AI-suggested dependency edges require explicit user confirmation before they are accepted.
 - Study status records activity and must not be presented as proof of mastery.
-- The product refuses assessed-work answers, unrelated requests, unsupported formulas, and fabricated derivations.
-- Saved cards remain usable offline; online learning falls back to cached approved search results when retrieval is unavailable.
+- The product refuses assessed-work answers, unrelated requests, and fabricated citations or derivations.
+- Saved cards remain usable offline; uncited AI answers are visibly qualified and do not claim source support.
 - The CLI and Web interface must use the same repository, rules, safety behavior, and persistence model.
 
 ## Operating Context
@@ -49,7 +51,7 @@ University mathematics learners who want to understand formulas as connected ide
 
 ## Terminology
 
-- Formula card: source-backed explanation of one formula.
+- Formula card: AI-generated explanation of one formula, with real citations when the provider supplies them.
 - AI Module: generated summary, explanation, examples, and derivation steps.
 - User Module: learner-owned notes and study status.
 - Dependency edge: a directed, source-backed relation between formulas.

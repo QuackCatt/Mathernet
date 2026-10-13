@@ -52,6 +52,16 @@ def handle_api_request(
             return ApiResponse(200, service.health())
         if path == "/api/openapi.json" and method == "GET":
             return ApiResponse(200, openapi_document())
+        if path == "/api/gateway" and method == "GET":
+            return ApiResponse(200, service.gateway_config())
+        if path == "/api/gateway" and method == "PATCH":
+            return ApiResponse(200, service.save_gateway_config(body or {}))
+        if path == "/api/gateway/mcp" and method == "PATCH":
+            return ApiResponse(200, service.save_gateway_config(body or {}))
+        if path == "/api/gateway/test-ai" and method == "POST":
+            return ApiResponse(200, service.test_gateway_ai())
+        if path == "/api/gateway/test-search" and method == "POST":
+            return ApiResponse(200, service.test_gateway_search())
         if path == "/api/formulas" and method == "GET":
             return ApiResponse(
                 200,
@@ -208,6 +218,13 @@ def openapi_document() -> dict[str, Any]:
         },
         "paths": {
             "/api/health": {"get": {"summary": "Service and graph health"}},
+            "/api/gateway": {
+                "get": {"summary": "Read masked AI and search gateway settings"},
+                "patch": {"summary": "Save AI and search gateway settings"},
+            },
+            "/api/gateway/mcp": {"patch": {"summary": "Save MCP search gateway settings"}},
+            "/api/gateway/test-ai": {"post": {"summary": "Test the configured AI provider"}},
+            "/api/gateway/test-search": {"post": {"summary": "Test the configured search connection"}},
             "/api/formulas": {"get": {"summary": "Search and page formula summaries"}},
             "/api/learn": {"post": {"summary": "Create or reuse a source-backed formula card"}},
             "/api/formulas/{formula_id}": {"get": {"summary": "Read a complete formula card"}},

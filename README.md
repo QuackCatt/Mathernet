@@ -1,6 +1,6 @@
 # Mathernet
 
-Mathernet (数联网) is a source-backed formula knowledge-graph learning assistant. Input a formula, get its story, trace its dependencies, and keep your study understanding in a persistent local graph.
+Mathernet (数联网) is an AI-assisted formula knowledge-graph learning assistant. Input a formula, get its story, trace its dependencies, and keep your study understanding in a persistent local graph.
 
 Mathernet is for study organization and reflection. It does not solve or grade exams and homework, verify formal proofs, replace textbooks or instructors, or certify mastery.
 
@@ -10,7 +10,7 @@ No source-code editing is required:
 
 ```sh
 sh scripts/setup.sh
-# Edit .env with your course MCP Web Search command and optional API key.
+# Configure an AI provider in the Web settings; MCP is optional.
 scripts/mathernet demo
 scripts/mathernet show "Euler's identity"
 scripts/mathernet graph "Euler's identity"
@@ -18,9 +18,9 @@ scripts/mathernet graph "Euler's identity"
 
 The setup script creates a local virtual environment and a private `.env` file. Personal notes and generated graph data live under `data/`, which is excluded from version control.
 
-If the live retrieval service is unavailable, previously saved formula cards remain searchable. New online learning requests report that retrieval is unavailable instead of inventing content.
+If an optional MCP tool is unavailable, previously saved formula cards remain searchable. With MCP disabled, Mathernet asks the selected AI provider directly and saves only citations that the provider actually returns.
 
-`scripts/mathernet doctor` distinguishes required retrieval settings from optional model synthesis. The MCP Web Search command or URL must be configured for new learning requests. `OPENAI_API_KEY` is optional: without it, Mathernet creates a conservative source-backed record and does not invent derivations or dependency edges.
+`scripts/mathernet doctor` distinguishes local storage from optional model and MCP settings. An AI provider is required for new AI-generated learning requests. MCP is optional and used only when you want a connected tool to provide source material.
 
 ## Main Commands
 
@@ -74,16 +74,16 @@ The learn action follows the same learning chain as the terminal: approved-sourc
 
 AI-suggested dependencies always return `requires_user_confirmation: true`; they are only accepted through an explicit confirmation action. Optional `expected_updated_at` values provide optimistic conflict detection for Web edits. Errors use a stable JSON shape with `error.code`, `error.message`, and, for refusals, `error.reason_code`.
 
-Successful MCP searches are cached in `data/search_cache.json`. If retrieval becomes unavailable later, Mathernet reuses cached approved sources for the same query; it still refuses to create a card when no cached or live reliable source exists.
+Successful MCP searches are cached in `data/search_cache.json`. Without MCP, Mathernet uses provider-native answers and stores real citations only when the model supplies them; it never fabricates source URLs.
 
 ## Configuration
 
-Copy `.env.example` to `.env` if setup has not already done so. The two supported MCP Web Search transports are:
+Configure the AI provider from the Web settings. MCP is optional and supports two transports:
 
 - `MCP_TRANSPORT=stdio` with `MCP_SERVER_COMMAND="command arg1 arg2"` and `MCP_TOOL_NAME=search`.
 - `MCP_TRANSPORT=http` with `MCP_HTTP_URL=...`, optional `MCP_HTTP_HEADERS_JSON=...`, and `MCP_TOOL_NAME=search`.
 
-`OPENAI_API_KEY` is optional. When present, `OpenAIResponsesSynthesizer` requests a strict JSON formula card and source-backed dependency suggestions. When absent, the offline synthesizer stores source material but refuses to invent derivations or relations.
+API keys are stored in the local gateway configuration and are never returned in full by the API. Answers without citations are labelled as uncited and cannot create dependency edges.
 
 Secrets stay in `.env` and are never printed by `doctor`.
 

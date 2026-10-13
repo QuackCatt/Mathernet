@@ -16,6 +16,7 @@ from typing import Any, Protocol
 
 from .config import Settings
 from .errors import RetrievalError
+from .http_client import open_url
 from .models import SourceRecord
 from .normalization import normalize_text
 
@@ -438,7 +439,7 @@ class MCPHTTPClient:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+            with open_url(request, timeout=self.timeout_seconds) as response:
                 if expect_session:
                     self.session_id = response.headers.get("Mcp-Session-Id")
                 body = response.read().decode("utf-8")

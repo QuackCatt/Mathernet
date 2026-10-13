@@ -83,6 +83,43 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(context.exception.reason_code, RefusalReason.NO_RELIABLE_SOURCE.value)
         self.assertEqual(synthesizer.calls, 0)
 
+    def test_direct_ai_mode_creates_an_uncited_answer_without_fake_sources(self):
+        result = result_for("Direct formula", "x=1")
+        result.ai_module.derivation_steps = ["Unsupported derivation"]
+        result.dependencies = [
+            SynthesisDependency(
+                "Existing formula",
+                EdgeRelation.PREREQUISITE,
+                "unsupported",
+                ["https://example.edu/invented"],
+            )
+        ]
+        synthesizer = StubSynthesizer(result)
+        agent = FormulaAgent(self.repository, None, synthesizer, ())
+        learned = agent.learn("Direct formula")
+        self.assertTrue(learned.created)
+        self.assertEqual(synthesizer.calls, 1)
+        self.assertEqual(learned.node.sources, [])
+        self.assertEqual(learned.node.ai_module.derivation_steps, [])
+        self.assertEqual(learned.edges, [])
+        self.assertTrue(any("without source citations" in warning for warning in learned.warnings))
+
+    def test_direct_ai_mode_keeps_real_citations_returned_by_the_model(self):
+        result = result_for("Cited formula", "x=2")
+        result.sources = [
+            SearchResult(
+                "AI cited source",
+                "https://example.edu/cited",
+                "Example University",
+                "A cited excerpt",
+            )
+        ]
+        synthesizer = StubSynthesizer(result)
+        agent = FormulaAgent(self.repository, None, synthesizer, ())
+        learned = agent.learn("Cited formula")
+        self.assertEqual(len(learned.node.sources), 1)
+        self.assertEqual(len(learned.node.ai_module.derivation_steps), 0)
+
     def test_successful_card_creates_ai_suggested_edge(self):
         self.repository.add_or_update_source(self.source.to_source_record())
         self.repository.add_formula(
