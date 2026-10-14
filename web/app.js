@@ -1,6 +1,6 @@
 const state = {
   formulas: [],
-  total: 0,
+  statusCounts: { all: 0, learning: 0, reviewed: 0 },
   selectedId: null,
   selectedCard: null,
   graph: null,
@@ -13,6 +13,19 @@ const state = {
   pendingRejectEdgeId: null,
   libraryRequest: 0,
   selectionRequest: 0,
+  deepDiveRequest: 0,
+  deepGenerationRequest: 0,
+  deepDiveFormulaId: null,
+  deepSessions: [],
+  activeDeepSession: null,
+  deepChatBusy: false,
+  deepLoading: false,
+  deepGenerating: false,
+  introductions: {},
+  introduction: null,
+  introductionLoading: false,
+  introductionError: "",
+  introductionRequest: 0,
   gateway: null,
   firstRun: true,
 };
@@ -22,25 +35,29 @@ const elements = {
   connectionLabel: document.querySelector("#connection-label"),
   globalSearch: document.querySelector("#global-search"),
   globalQuery: document.querySelector("#global-query"),
+  globalSubmit: document.querySelector("#global-submit"),
   libraryQuery: document.querySelector("#library-query"),
-  formulaCount: document.querySelector("#formula-count"),
   formulaList: document.querySelector("#formula-list"),
   graphEmpty: document.querySelector("#graph-empty"),
   graphDescription: document.querySelector("#graph-description"),
   inspectorTitle: document.querySelector("#inspector-title"),
-  inspectorFormula: document.querySelector("#inspector-formula"),
   inspectorStatus: document.querySelector("#inspector-status"),
   overviewEmpty: document.querySelector("#overview-empty"),
   overviewContent: document.querySelector("#overview-content"),
-  sourcesEmpty: document.querySelector("#sources-empty"),
-  sourcesContent: document.querySelector("#sources-content"),
   learningEmpty: document.querySelector("#learning-empty"),
   learningContent: document.querySelector("#learning-content"),
-  learnDialog: document.querySelector("#learn-dialog"),
-  learnForm: document.querySelector("#learn-form"),
-  learnQuery: document.querySelector("#learn-query"),
-  learnError: document.querySelector("#learn-error"),
-  learnSubmit: document.querySelector("#learn-submit"),
+  deepDiveDialog: document.querySelector("#deep-dive-dialog"),
+  deepDiveTitle: document.querySelector("#deep-dive-title"),
+  deepDiveFormula: document.querySelector("#deep-dive-formula"),
+  deepDiveContent: document.querySelector("#deep-dive-content"),
+  deepSessionNew: document.querySelector("#deep-session-new"),
+  deepSessionNewLabel: document.querySelector("#deep-session-new-label"),
+  deepSessionDelete: document.querySelector("#deep-session-delete"),
+  deepSessionList: document.querySelector("#deep-session-list"),
+  deepChatForm: document.querySelector("#deep-chat-form"),
+  deepChatInput: document.querySelector("#deep-chat-input"),
+  deepChatSubmit: document.querySelector("#deep-chat-submit"),
+  deepChatStatus: document.querySelector("#deep-chat-status"),
   rejectDialog: document.querySelector("#reject-dialog"),
   confirmReject: document.querySelector("#confirm-reject"),
   toastRegion: document.querySelector("#toast-region"),
@@ -114,6 +131,93 @@ function latexMarkup(value, fallback = "", displayMode = false) {
     }
   }
   return escapeHTML(source);
+}
+
+function richText(value) {
+  const source = String(value || "").trim();
+  if (!source) return "";
+  return source
+    .split(/(\$\$[\s\S]+?\$\$|\$[^$\n]+\$)/g)
+    .map((part) => {
+      if (part.startsWith("$$") && part.endsWith("$$")) {
+        return latexMarkup(part.slice(2, -2), part.slice(2, -2), true);
+      }
+      if (part.startsWith("$") && part.endsWith("$")) {
+        return latexMarkup(part.slice(1, -1), part.slice(1, -1), false);
+      }
+      return escapeHTML(part).replaceAll("\n", "<br>");
+    })
+    .join("");
+}
+
+function articleMarkup(value) {
+  const blocks = [];
+  let paragraph = [];
+  let list = [];
+  const source = String(value || "").replace(/\s+(#{2,6}\s+)/g, "\n\n$1");
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    blocks.push(`<p>${paragraph.map((line) => richText(line)).join("<br>")}</p>`);
+    paragraph = [];
+  };
+  const flushList = () => {
+    if (!list.length) return;
+    blocks.push(`<ul>${list.map((line) => `<li>${richText(line)}</li>`).join("")}</ul>`);
+    list = [];
+  };
+  const flushAll = () => {
+    flushParagraph();
+    flushList();
+  };
+
+  for (const rawLine of source.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const heading = line.match(/^(#{2,6})\s+(.+)$/);
+    const listItem = line.match(/^[-*]\s+(.+)$/);
+    if (!line) {
+      flushAll();
+    } else if (heading) {
+      flushAll();
+      const level = Math.min(6, Math.max(3, heading[1].length + 1));
+      blocks.push(`<h${level}>${richText(heading[2])}</h${level}>`);
+    } else if (listItem) {
+      flushParagraph();
+      list.push(listItem[1]);
+    } else {
+      flushList();
+      paragraph.push(line);
+    }
+  }
+  flushAll();
+  return blocks.join("");
+}
+
+function deepArticleMarkup(article) {
+  if (typeof article === "string") return articleMarkup(article);
+  const introduction = article?.introduction || "";
+  const sections = Array.isArray(article?.sections) ? article.sections : [];
+  const kindLabels = {
+    story: "Story",
+    application: "Application",
+    background: "Background",
+    context: "Context",
+    other: "Further reading",
+  };
+  return `
+    ${introduction ? `<div class="deep-article-intro">${articleMarkup(introduction)}</div>` : ""}
+    ${sections
+      .map(
+        (section) => `
+          <section class="deep-article-section">
+            <p class="deep-article-subtitle">${escapeHTML(section.subtitle || kindLabels[section.kind] || "Context")}</p>
+            <h3>${escapeHTML(section.heading)}</h3>
+            <div class="deep-article-section-body">${articleMarkup(section.body)}</div>
+          </section>
+        `,
+      )
+      .join("")}
+  `;
 }
 
 function formulaValue(card) {
@@ -254,9 +358,8 @@ function restoreUrlState() {
   state.query = params.get("q") || "";
   state.status = params.get("status") || "";
   state.depth = [1, 2].includes(depth) ? depth : 1;
-  state.tab = ["overview", "sources", "learning"].includes(tab) ? tab : "overview";
+  state.tab = ["overview", "learning"].includes(tab) ? tab : "overview";
   state.selectedId = params.get("formula");
-  elements.globalQuery.value = state.query;
   elements.libraryQuery.value = state.query;
   document.querySelectorAll(".library-controls [data-status]").forEach((button) => {
     const active = button.dataset.status === state.status;
@@ -271,13 +374,16 @@ function restoreUrlState() {
 }
 
 function renderLibrary() {
-  elements.formulaCount.textContent = String(state.total);
+  document.querySelectorAll("[data-status-count]").forEach((element) => {
+    const count = state.statusCounts[element.dataset.statusCount] ?? 0;
+    element.textContent = `(${count})`;
+  });
   elements.formulaList.setAttribute("aria-busy", "false");
   if (!state.formulas.length) {
     elements.formulaList.innerHTML = `
       <div class="list-empty">
         <h3>No formulas found</h3>
-        <p>Try another name or learn a new formula from an approved source.</p>
+        <p>Use the search above to open an existing formula or learn a new one.</p>
       </div>
     `;
     return;
@@ -297,7 +403,6 @@ function renderLibrary() {
           <span class="formula-row-meta">
             <span class="formula-row-topic">${escapeHTML(topic)}</span>
             <span aria-hidden="true">·</span>
-            <span>${formula.source_count} source${formula.source_count === 1 ? "" : "s"}</span>
             <span class="row-state" data-state="${escapeHTML(formula.status)}">${escapeHTML(statusLabels[formula.status] || formula.status)}</span>
           </span>
         </button>
@@ -322,120 +427,42 @@ function renderOverview() {
     return;
   }
   const formula = card.formula;
-  const ai = formula.ai_module;
-  const user = formula.user_module;
+  const introduction = state.introduction?.introduction || "";
   elements.overviewEmpty.hidden = true;
   elements.overviewContent.hidden = false;
   elements.overviewContent.innerHTML = `
     <section class="inspector-section">
-      <span class="section-label">Formula identity</span>
+      <span class="section-label">Formula</span>
       <div
         class="formula-display formula-latex"
         role="math"
         aria-label="${escapeHTML(formulaValue(card) || card.display)}"
       >${latexMarkup(formulaValue(card), card.display, true)}</div>
-      <p class="body-copy">${escapeHTML(ai.summary)}</p>
     </section>
     <section class="inspector-section">
-      <span class="section-label">AI Module · Generated</span>
-      <h3>What it means</h3>
-      <p class="body-copy">${escapeHTML(ai.explanation)}</p>
+      <span class="section-label">Simple introduction</span>
       ${
-        ai.examples.length
-          ? `<h3>Examples</h3><ul class="example-list">${ai.examples.map((item) => `<li>${escapeHTML(item)}</li>`).join("")}</ul>`
-          : ""
+        state.introductionLoading
+          ? `<div class="introduction-status" aria-busy="true">
+              <span class="introduction-spinner" aria-hidden="true"></span>
+              <p><strong>Writing a concise introduction…</strong></p>
+              <p>Mathernet is checking the formula's definition and common uses. This can take up to a minute.</p>
+            </div>`
+          : state.introductionError
+            ? `<div class="introduction-status is-error">
+                <p><strong>The introduction could not be generated.</strong></p>
+                <p>${escapeHTML(state.introductionError)}</p>
+                <button class="button button-secondary" type="button" data-retry-introduction>Try again</button>
+              </div>`
+            : introduction
+              ? `<div class="introduction-copy">${articleMarkup(introduction)}</div>`
+              : `<p class="body-copy">An introduction is not available yet.</p>`
       }
-      ${
-        ai.derivation_steps.length
-          ? `<h3>Derivation steps</h3><ol class="derivation-list">${ai.derivation_steps.map((item) => `<li>${escapeHTML(item)}</li>`).join("")}</ol>`
-          : ""
-      }
+      <button class="button button-primary deep-dive-button" type="button" data-open-deep-dive>
+        Explore deeper
+        ${icon("arrow-right")}
+      </button>
     </section>
-    <section class="inspector-section">
-      <span class="section-label user-label">User Module · Yours</span>
-      <h3>Study note</h3>
-      <p class="body-copy">${escapeHTML(user.notes || "No personal note yet. Open Learning to write one.")}</p>
-      <button class="button button-secondary" type="button" data-open-learning>Open learning notes</button>
-    </section>
-  `;
-}
-
-function renderSources() {
-  const card = state.selectedCard;
-  if (!card || !card.sources.length) {
-    elements.sourcesEmpty.hidden = false;
-    elements.sourcesContent.hidden = true;
-    elements.sourcesContent.innerHTML = "";
-    return;
-  }
-  elements.sourcesEmpty.hidden = true;
-  elements.sourcesContent.hidden = false;
-  elements.sourcesContent.innerHTML = `
-    <div class="source-list">
-      ${card.sources
-        .map(
-          (source) => `
-            <article class="source-item">
-              <div class="source-meta">
-                <p class="source-publisher">${escapeHTML(source.publisher)}</p>
-                <a class="source-link" href="${escapeHTML(safeUrl(source.url))}" target="_blank" rel="noopener noreferrer">
-                  Open source ${icon("external")}
-                </a>
-              </div>
-              <h3 class="source-title">${escapeHTML(source.title)}</h3>
-              <p class="source-excerpt">${escapeHTML(source.excerpt)}</p>
-              <time class="source-time" datetime="${escapeHTML(source.retrieved_at)}">Retrieved ${escapeHTML(formatDate(source.retrieved_at))}</time>
-            </article>
-          `,
-        )
-        .join("")}
-    </div>
-  `;
-}
-
-function renderEdges(edges) {
-  if (!edges.length) {
-    return `
-      <div class="list-empty">
-        <h3>No dependency decisions</h3>
-        <p>Relations appear here when Mathernet finds a supported prerequisite or derivation basis.</p>
-      </div>
-    `;
-  }
-  return `
-    <div class="edge-list">
-      ${edges
-        .map((edge) => {
-          const pending = edge.requires_user_confirmation;
-          return `
-            <article class="edge-item">
-              <div class="edge-direction">
-                <strong>${escapeHTML(edge.source_name)}</strong>
-                <span class="edge-arrow" aria-hidden="true">→</span>
-                <strong>${escapeHTML(edge.target_name)}</strong>
-              </div>
-              <span class="edge-relation">${escapeHTML(relationLabels[edge.relation] || edge.relation)}</span>
-              <p class="edge-rationale">${escapeHTML(edge.rationale)}</p>
-              ${
-                pending
-                  ? `<div class="edge-actions">
-                      <button class="edge-action confirm" type="button" data-confirm-edge="${escapeHTML(edge.id)}" data-edge-updated="${escapeHTML(edge.updated_at)}">
-                        ${icon("check")} Confirm relation
-                      </button>
-                      <button class="edge-action reject" type="button" data-reject-edge="${escapeHTML(edge.id)}" data-edge-updated="${escapeHTML(edge.updated_at)}">
-                        ${icon("x")} Reject
-                      </button>
-                    </div>`
-                  : `<div class="decision-state ${edge.verification_status === "rejected" ? "rejected" : "accepted"}">
-                      ${icon(edge.verification_status === "rejected" ? "x" : "check")}
-                      ${escapeHTML(edge.verification_status.replaceAll("_", " "))}
-                    </div>`
-              }
-            </article>
-          `;
-        })
-        .join("")}
-    </div>
   `;
 }
 
@@ -448,8 +475,6 @@ function renderLearning() {
     return;
   }
   const formula = card.formula;
-  const edges = [...card.incoming_edges, ...card.outgoing_edges];
-  const pendingCount = edges.filter((edge) => edge.requires_user_confirmation).length;
   elements.learningEmpty.hidden = true;
   elements.learningContent.hidden = false;
   elements.learningContent.innerHTML = `
@@ -470,7 +495,6 @@ function renderLearning() {
           )
           .join("")}
       </div>
-      <p class="field-hint">Study status records activity, not mastery.</p>
     </section>
     <section class="inspector-section">
       <span class="section-label user-label">Personal note</span>
@@ -487,34 +511,305 @@ function renderLearning() {
         </div>
       </form>
     </section>
-    <section class="inspector-section">
-      <span class="section-label">Dependency decisions</span>
-      <h3>${pendingCount ? `${pendingCount} suggestion${pendingCount === 1 ? "" : "s"} need your decision` : "Connected relationships"}</h3>
-      ${renderEdges(edges)}
-    </section>
   `;
+}
+
+function renderDeepSessionList() {
+  if (!elements.deepSessionList) return;
+  elements.deepSessionList.innerHTML = state.deepSessions.length
+    ? state.deepSessions
+        .map((session, index) => `
+          <button
+            class="deep-session-tab ${session.id === state.activeDeepSession?.id ? "is-active" : ""}"
+            type="button"
+            data-deep-session-id="${escapeHTML(session.id)}"
+            aria-pressed="${session.id === state.activeDeepSession?.id}"
+          >
+            <span>${richText(session.title || `Session ${index + 1}`)}</span>
+            <small>${session.message_count || 0} message${session.message_count === 1 ? "" : "s"}</small>
+          </button>
+        `)
+        .join("")
+    : `<p class="deep-session-empty">No saved sessions yet.</p>`;
+  const busy = state.deepLoading || state.deepGenerating || state.deepChatBusy;
+  elements.deepSessionNew.disabled = busy;
+  elements.deepSessionNew.setAttribute("aria-busy", String(state.deepGenerating));
+  if (elements.deepSessionNewLabel) {
+    elements.deepSessionNewLabel.textContent = state.deepGenerating
+      ? "Generating…"
+      : state.deepLoading
+        ? "Opening…"
+        : "New session";
+  }
+  elements.deepSessionDelete.disabled = !state.activeDeepSession || busy;
+  elements.deepChatInput.disabled = busy;
+  elements.deepChatSubmit.disabled = busy || !state.activeDeepSession;
+}
+
+function renderDeepLoading(
+  label = "Preparing a new session…",
+  detail = "Mathernet is reading the formula context.",
+) {
+  elements.deepDiveContent.setAttribute("aria-busy", "true");
+  elements.deepDiveContent.innerHTML = `
+    <div class="deep-loading" aria-label="${escapeHTML(label)}">
+      <span></span><span></span><span></span>
+      <p class="deep-loading-label">${escapeHTML(label)}</p>
+      <p class="deep-loading-detail">${escapeHTML(detail)}</p>
+    </div>
+  `;
+}
+
+function renderDeepDive({ scrollToBottom = false } = {}) {
+  const session = state.activeDeepSession;
+  if (!session) return;
+  elements.deepDiveContent.setAttribute("aria-busy", "false");
+  const sources = session.sources || [];
+  const messages = session.messages || [];
+  elements.deepDiveContent.innerHTML = `
+    <article class="deep-article">
+      <header class="deep-article-header">
+        <p class="section-kicker">Saved session</p>
+        <h3>${richText(session.title || "Deep dive")}</h3>
+      </header>
+      <div class="deep-article-body">${deepArticleMarkup(session.article)}</div>
+      ${session.warnings?.length
+        ? `<aside class="deep-warnings">${session.warnings.map((warning) => `<p>${escapeHTML(warning)}</p>`).join("")}</aside>`
+        : ""}
+    </article>
+    ${messages.length
+      ? `<section class="deep-chat-log" aria-label="Conversation">
+          ${messages
+            .map(
+              (message) => `
+                <article class="deep-message ${message.role === "user" ? "is-user" : "is-assistant"}">
+                  <span class="deep-message-role">${message.role === "user" ? "You" : "Mathernet"}</span>
+                  <div class="deep-message-body">${richText(message.content)}</div>
+                </article>
+              `,
+            )
+            .join("")}
+        </section>`
+      : ""}
+    ${sources.length
+      ? `<section class="deep-references">
+          <span class="section-label">References</span>
+          <ul class="reference-links">
+            ${sources
+              .slice(0, 5)
+              .map(
+                (source) => `
+                  <li>
+                    <a href="${escapeHTML(safeUrl(source.url))}" target="_blank" rel="noopener noreferrer">
+                      ${escapeHTML(source.title)}
+                      ${icon("external")}
+                    </a>
+                    <span>${escapeHTML(source.publisher)}</span>
+                  </li>
+                `,
+              )
+              .join("")}
+          </ul>
+        </section>`
+      : ""}
+  `;
+  renderDeepSessionList();
+  if (scrollToBottom) {
+    elements.deepDiveContent.scrollTop = elements.deepDiveContent.scrollHeight;
+  }
+}
+
+function showDeepDiveError(error) {
+  elements.deepDiveContent.setAttribute("aria-busy", "false");
+  elements.deepDiveContent.innerHTML = `
+    <div class="deep-error">
+      <h3>Deep dive unavailable</h3>
+      <p>${escapeHTML(error.message)}</p>
+      <button class="button button-secondary" type="button" data-create-deep-session>Start a new session</button>
+    </div>
+  `;
+  renderDeepSessionList();
+}
+
+async function loadDeepSession(sessionId, fromLoader = false) {
+  const formulaId = state.deepDiveFormulaId;
+  if (state.deepGenerating || state.deepChatBusy) {
+    showToast("Mathernet is still working in this deep dive. Please wait for it to finish.", "notice");
+    return;
+  }
+  if (state.deepLoading && !fromLoader) return;
+  const requestId = ++state.deepDiveRequest;
+  state.deepLoading = true;
+  renderDeepLoading("Opening the saved session…", "Restoring the article and conversation.");
+  try {
+    const session = await api(`/api/formulas/${encodeURIComponent(formulaId)}/deep-dive/sessions/${encodeURIComponent(sessionId)}`);
+    if (requestId !== state.deepDiveRequest || state.deepDiveFormulaId !== formulaId) return;
+    state.activeDeepSession = session;
+    renderDeepDive();
+  } catch (error) {
+    if (requestId === state.deepDiveRequest) showDeepDiveError(error);
+  } finally {
+    state.deepLoading = false;
+    renderDeepSessionList();
+  }
+}
+
+async function createDeepSession(fromLoader = false) {
+  const formulaId = state.deepDiveFormulaId;
+  if (!formulaId || state.deepChatBusy) return;
+  if (state.deepGenerating) {
+    if (!fromLoader) showToast("A deep dive is already being generated. Please wait for it to finish.", "notice");
+    return;
+  }
+  if (state.deepLoading && !fromLoader) return;
+  const requestId = ++state.deepGenerationRequest;
+  state.deepGenerating = true;
+  renderDeepSessionList();
+  renderDeepLoading(
+    "Generating a fresh deep dive…",
+    "Mathernet is researching and writing the opening article. This can take up to a minute.",
+  );
+  try {
+    const session = await api(`/api/formulas/${encodeURIComponent(formulaId)}/deep-dive/sessions`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    if (requestId !== state.deepGenerationRequest || state.deepDiveFormulaId !== formulaId) return;
+    state.activeDeepSession = session;
+    state.deepSessions = await api(`/api/formulas/${encodeURIComponent(formulaId)}/deep-dive/sessions`).then((payload) => payload.sessions || []);
+    renderDeepDive();
+  } catch (error) {
+    if (requestId === state.deepGenerationRequest && state.deepDiveFormulaId === formulaId) showDeepDiveError(error);
+  } finally {
+    if (requestId === state.deepGenerationRequest) state.deepGenerating = false;
+    renderDeepSessionList();
+  }
+}
+
+async function loadDeepDiveSessions({ createIfEmpty = false } = {}) {
+  const card = state.selectedCard;
+  if (!card) return;
+  const formulaId = card.formula.id;
+  state.deepDiveFormulaId = formulaId;
+  const requestId = ++state.deepDiveRequest;
+  state.deepLoading = true;
+  renderDeepSessionList();
+  renderDeepLoading("Opening your saved sessions…", "Checking this formula's saved explorations.");
+  try {
+    const payload = await api(`/api/formulas/${encodeURIComponent(formulaId)}/deep-dive/sessions`);
+    if (requestId !== state.deepDiveRequest || state.deepDiveFormulaId !== formulaId) return;
+    state.deepSessions = payload.sessions || [];
+    if (!state.deepSessions.length && createIfEmpty) {
+      if (state.deepGenerating && state.deepDiveFormulaId === formulaId) return;
+      await createDeepSession(true);
+      return;
+    }
+    if (state.deepSessions.length) {
+      await loadDeepSession(state.deepSessions[0].id, true);
+      return;
+    }
+    state.activeDeepSession = null;
+    elements.deepDiveContent.innerHTML = `
+      <div class="deep-empty">
+        <h3>Start a deep dive</h3>
+        <p>Create a new session when you are ready to explore this formula.</p>
+        <button class="button button-primary" type="button" data-create-deep-session>
+          ${icon("plus")} New session
+        </button>
+      </div>
+    `;
+    renderDeepSessionList();
+  } catch (error) {
+    if (requestId === state.deepDiveRequest) showDeepDiveError(error);
+  } finally {
+    state.deepLoading = false;
+    renderDeepSessionList();
+  }
+}
+
+function openDeepDive() {
+  const card = state.selectedCard;
+  if (!card) return;
+  state.deepDiveFormulaId = card.formula.id;
+  state.activeDeepSession = null;
+  elements.deepDiveTitle.textContent = card.formula.name;
+  elements.deepDiveFormula.setAttribute("role", "math");
+  elements.deepDiveFormula.setAttribute("aria-label", formulaValue(card) || card.display);
+  elements.deepDiveFormula.innerHTML = latexMarkup(formulaValue(card), card.display);
+  if (!elements.deepDiveDialog.open) elements.deepDiveDialog.showModal();
+  loadDeepDiveSessions({ createIfEmpty: true });
+}
+
+async function submitDeepChat(event) {
+  event.preventDefault();
+  const message = elements.deepChatInput.value.trim();
+  const formulaId = state.deepDiveFormulaId;
+  const session = state.activeDeepSession;
+  if (!message || !formulaId || !session || state.deepChatBusy) return;
+  state.deepChatBusy = true;
+  elements.deepChatInput.value = "";
+  elements.deepChatInput.disabled = true;
+  setBusy(elements.deepChatSubmit, true, "Thinking…");
+  elements.deepChatStatus.textContent = "Mathernet is considering your question…";
+  const optimistic = {
+    ...session,
+    messages: [...(session.messages || []), { role: "user", content: message }],
+  };
+  state.activeDeepSession = optimistic;
+  renderDeepDive({ scrollToBottom: true });
+  try {
+    const result = await api(
+      `/api/formulas/${encodeURIComponent(formulaId)}/deep-dive/sessions/${encodeURIComponent(session.id)}/chat`,
+      { method: "POST", body: JSON.stringify({ message }) },
+    );
+    state.activeDeepSession = result.session;
+    state.deepSessions = await api(`/api/formulas/${encodeURIComponent(formulaId)}/deep-dive/sessions`).then((payload) => payload.sessions || []);
+    elements.deepChatStatus.textContent = "Ask a follow-up whenever you are ready.";
+  } catch (error) {
+    state.activeDeepSession = session;
+    elements.deepChatStatus.textContent = error.message;
+    showToast(error.message, "error");
+  } finally {
+    state.deepChatBusy = false;
+    elements.deepChatInput.disabled = false;
+    setBusy(elements.deepChatSubmit, false);
+    renderDeepDive({ scrollToBottom: true });
+    elements.deepChatInput.focus();
+  }
+}
+
+async function deleteDeepSession() {
+  const formulaId = state.deepDiveFormulaId;
+  const session = state.activeDeepSession;
+  if (!formulaId || !session || state.deepChatBusy) return;
+  const confirmed = window.confirm("Delete this deep-dive session and its conversation?");
+  if (!confirmed) return;
+  try {
+    await api(
+      `/api/formulas/${encodeURIComponent(formulaId)}/deep-dive/sessions/${encodeURIComponent(session.id)}`,
+      { method: "DELETE" },
+    );
+    state.activeDeepSession = null;
+    await loadDeepDiveSessions({ createIfEmpty: false });
+    showToast("Deep-dive session deleted.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
 }
 
 function renderInspector() {
   const card = state.selectedCard;
   if (!card) {
     elements.inspectorTitle.textContent = "Select a formula";
-    elements.inspectorFormula.textContent = "Choose an item from the library or graph.";
-    elements.inspectorFormula.removeAttribute("role");
-    elements.inspectorFormula.removeAttribute("aria-label");
     elements.inspectorStatus.textContent = "No selection";
     elements.inspectorStatus.className = "status-badge neutral";
   } else {
     const formula = card.formula;
     elements.inspectorTitle.textContent = formula.name;
-    elements.inspectorFormula.setAttribute("role", "math");
-    elements.inspectorFormula.setAttribute("aria-label", formulaValue(card) || card.display);
-    elements.inspectorFormula.innerHTML = latexMarkup(formulaValue(card), card.display);
     elements.inspectorStatus.textContent = statusLabels[formula.status] || formula.status;
     elements.inspectorStatus.className = `status-badge ${formula.status}`;
   }
   renderOverview();
-  renderSources();
   renderLearning();
   setTab(state.tab, false);
 }
@@ -526,7 +821,7 @@ function renderAll() {
 }
 
 function setTab(tab, focus = true) {
-  state.tab = ["overview", "sources", "learning"].includes(tab) ? tab : "overview";
+  state.tab = ["overview", "learning"].includes(tab) ? tab : "overview";
   document.querySelectorAll("[data-tab]").forEach((button) => {
     const active = button.dataset.tab === state.tab;
     button.classList.toggle("is-active", active);
@@ -543,16 +838,13 @@ function setTab(tab, focus = true) {
 async function loadHealth() {
   try {
     state.health = await api("/api/health");
-    setConnection(
-      true,
-      `${state.health.formula_count} formulas · ${state.health.pending_edge_count} pending`,
-    );
+    setConnection(true, "Service connected");
   } catch {
     setConnection(false, "Local service offline");
   }
 }
 
-async function loadFormulas({ focusFirst = false } = {}) {
+async function loadFormulas() {
   const requestId = ++state.libraryRequest;
   elements.formulaList.setAttribute("aria-busy", "true");
   elements.formulaList.innerHTML = `<div class="loading-row">Loading formulas…</div>`;
@@ -564,12 +856,13 @@ async function loadFormulas({ focusFirst = false } = {}) {
     const payload = await api(`/api/formulas?${params.toString()}`);
     if (requestId !== state.libraryRequest) return;
     state.formulas = payload.items;
-    state.total = payload.total;
+    state.statusCounts = {
+      all: payload.status_counts?.all ?? payload.total,
+      learning: payload.status_counts?.learning ?? 0,
+      reviewed: payload.status_counts?.reviewed ?? 0,
+    };
     renderLibrary();
     syncUrl();
-    if (focusFirst && state.formulas[0]) {
-      await selectFormula(state.formulas[0].id);
-    }
   } catch (error) {
     if (requestId !== state.libraryRequest) return;
     elements.formulaList.setAttribute("aria-busy", "false");
@@ -579,6 +872,30 @@ async function loadFormulas({ focusFirst = false } = {}) {
         <p>${escapeHTML(error.message)}</p>
       </div>
     `;
+  }
+}
+
+async function loadFormulaIntroduction(formulaId) {
+  const requestId = ++state.introductionRequest;
+  state.introductionLoading = true;
+  state.introductionError = "";
+  renderOverview();
+  try {
+    const introduction = await api(
+      `/api/formulas/${encodeURIComponent(formulaId)}/introduction`,
+      { method: "POST", body: JSON.stringify({}) },
+    );
+    if (requestId !== state.introductionRequest || state.selectedId !== formulaId) return;
+    state.introduction = introduction;
+    state.introductions[formulaId] = introduction;
+  } catch (error) {
+    if (requestId !== state.introductionRequest || state.selectedId !== formulaId) return;
+    state.introductionError = error.message;
+  } finally {
+    if (requestId === state.introductionRequest && state.selectedId === formulaId) {
+      state.introductionLoading = false;
+      renderOverview();
+    }
   }
 }
 
@@ -592,9 +909,13 @@ async function loadSelection(formulaId) {
   state.selectedId = formulaId;
   state.selectedCard = card;
   state.graph = graph;
+  state.introduction = state.introductions[formulaId] || null;
+  state.introductionLoading = !state.introduction;
+  state.introductionError = "";
   state.notesDirty = false;
   renderAll();
   syncUrl();
+  if (!state.introduction) loadFormulaIntroduction(formulaId);
 }
 
 async function selectFormula(formulaId) {
@@ -616,13 +937,6 @@ async function refreshSelection() {
   } catch (error) {
     showToast(error.message, "error");
   }
-}
-
-function openLearnDialog() {
-  elements.learnError.textContent = "";
-  elements.learnQuery.value = state.query || "";
-  elements.learnDialog.showModal();
-  window.setTimeout(() => elements.learnQuery.focus(), 0);
 }
 
 function closeDialog(dialog) {
@@ -733,25 +1047,23 @@ async function testGatewayConnection() {
   }
 }
 
-async function submitLearn(event) {
+async function submitFormulaSearch(event) {
   event.preventDefault();
-  const query = elements.learnQuery.value.trim();
-  elements.learnError.textContent = "";
+  const query = elements.globalQuery.value.trim();
   if (!query) {
-    elements.learnError.textContent = "Enter a formula name or expression.";
-    elements.learnQuery.focus();
+    showToast("Enter a formula name, expression, or description.", "notice");
+    elements.globalQuery.focus();
     return;
   }
-  setBusy(elements.learnSubmit, true, "Finding sources…");
+  setBusy(elements.globalSubmit, true, "Searching…");
   try {
     const result = await api("/api/learn", {
       method: "POST",
       body: JSON.stringify({ query }),
     });
-    closeDialog(elements.learnDialog);
     await loadFormulas();
-    await loadSelection(result.formula.formula.id);
-    showToast(result.created ? "Formula card created." : "Existing formula card opened.");
+    await selectFormula(result.formula.formula.id);
+    showToast(result.created ? "Formula card created." : "Existing formula opened.");
     for (const warning of result.warnings || []) {
       showToast(warning, "notice");
     }
@@ -764,13 +1076,15 @@ async function submitLearn(event) {
     }
     await loadHealth();
   } catch (error) {
-    elements.learnError.textContent =
+    showToast(
       error.reasonCode === "no_reliable_source"
-        ? "The configured source tool returned no usable material. Try another formula name or leave MCP empty to use the AI provider directly."
-        : error.message;
-    elements.learnQuery.focus();
+        ? "No usable source material was found. Try a more specific formula name or description."
+        : error.message,
+      "error",
+    );
+    elements.globalQuery.focus();
   } finally {
-    setBusy(elements.learnSubmit, false);
+    setBusy(elements.globalSubmit, false);
   }
 }
 
@@ -870,19 +1184,13 @@ async function confirmReject() {
 }
 
 function bindEvents() {
-  elements.globalSearch.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    state.query = elements.globalQuery.value.trim();
-    elements.libraryQuery.value = state.query;
-    await loadFormulas({ focusFirst: true });
-  });
+  elements.globalSearch.addEventListener("submit", submitFormulaSearch);
 
   let libraryTimer;
   elements.libraryQuery.addEventListener("input", () => {
     window.clearTimeout(libraryTimer);
     libraryTimer = window.setTimeout(async () => {
       state.query = elements.libraryQuery.value.trim();
-      elements.globalQuery.value = state.query;
       await loadFormulas();
     }, 220);
   });
@@ -937,10 +1245,6 @@ function bindEvents() {
     });
   });
 
-  document.querySelectorAll("#open-learn, #library-learn").forEach((button) => {
-    button.addEventListener("click", openLearnDialog);
-  });
-
   document.querySelectorAll("[data-close-dialog]").forEach((button) => {
     button.addEventListener("click", () => {
       if (button.dataset.closeDialog === "settings-dialog" && state.firstRun) {
@@ -951,7 +1255,6 @@ function bindEvents() {
     });
   });
 
-  elements.learnForm.addEventListener("submit", submitLearn);
   elements.settingsForm.addEventListener("submit", (event) => {
     event.preventDefault();
     saveGatewaySettings();
@@ -987,7 +1290,27 @@ function bindEvents() {
   });
 
   elements.overviewContent.addEventListener("click", (event) => {
-    if (event.target.closest("[data-open-learning]")) setTab("learning");
+    if (event.target.closest("[data-open-deep-dive]")) openDeepDive();
+    if (event.target.closest("[data-retry-introduction]") && state.selectedId) {
+      loadFormulaIntroduction(state.selectedId);
+    }
+  });
+
+  elements.deepSessionNew.addEventListener("click", createDeepSession);
+  elements.deepSessionDelete.addEventListener("click", deleteDeepSession);
+  elements.deepSessionList.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-deep-session-id]");
+    if (button && !state.deepChatBusy) loadDeepSession(button.dataset.deepSessionId);
+  });
+  elements.deepDiveContent.addEventListener("click", (event) => {
+    if (event.target.closest("[data-create-deep-session]")) createDeepSession();
+  });
+  elements.deepChatForm.addEventListener("submit", submitDeepChat);
+  elements.deepChatInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      elements.deepChatForm.requestSubmit();
+    }
   });
 
   elements.learningContent.addEventListener("submit", (event) => {

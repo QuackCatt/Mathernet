@@ -14,12 +14,13 @@ University mathematics learners who want to understand formulas as connected ide
 
 ## Jobs
 
-- Find a formula or closely related name in a persistent local library.
+- Open an existing formula or learn a new one through one unified search.
 - See which formulas support or depend on the selected formula.
 - Read AI-generated formula explanations without confusing generated content with personal understanding.
+- Continue formula exploration in preserved deep-dive sessions, start a fresh generated session, or delete a saved session.
 - Record a private study note and learning status.
 - Inspect every source and edit or explicitly confirm AI-suggested dependency edges.
-- Learn a new formula directly through the configured AI provider, using its built-in web capability when available.
+- Resolve a formula through the configured AI provider, reuse an exact local match, and create a card only when none exists.
 - Optionally provide source material through a configured MCP tool.
 
 ## Product Truth
@@ -27,6 +28,7 @@ University mathematics learners who want to understand formulas as connected ide
 - Mathernet is a local, AI-assisted formula knowledge-graph learning assistant.
 - Formula cards contain separate AI and user modules.
 - AI citations are stored only when the provider returns real source URLs; Mathernet never fabricates citations.
+- Deep dives are continuous articles with optional passages and optional references; missing topics or sources are omitted rather than filled with placeholders.
 - Dependency edges must cite stored sources. An answer without citations cannot create dependency edges.
 - AI-suggested dependency edges require explicit user confirmation before they are accepted.
 - Study status records activity and must not be presented as proof of mastery.
@@ -37,7 +39,7 @@ University mathematics learners who want to understand formulas as connected ide
 ## Operating Context
 
 - Local-first desktop and laptop use with a desktop working layout.
-- Typical workflow: search the library, inspect a formula graph, review sources, edit notes, and resolve suggested dependencies.
+- Typical workflow: search or describe a formula, open or create one card, inspect its map, review sources, edit notes, and resolve suggested dependencies.
 - The first Web surface is the working application, not a marketing page.
 - Formula expressions are rendered from stored LaTeX with KaTeX; ASCII display values are compatibility fallbacks only.
 - The dependency graph is an interactive force-directed canvas with dragging, panning, zooming, neighbour highlighting, and keyboard-selectable nodes.
@@ -53,7 +55,9 @@ University mathematics learners who want to understand formulas as connected ide
 
 - Formula card: AI-generated explanation of one formula, with real citations when the provider supplies them.
 - AI Module: generated summary, explanation, examples, and derivation steps.
+- Simple introduction: a generated 100-150 word definition explaining what a formula means, how it is used, and why it matters.
 - User Module: learner-owned notes and study status.
+- Deep-dive session: one generated opening article plus its preserved follow-up conversation for one formula.
 - Dependency edge: a directed, source-backed relation between formulas.
 - Accepted edge: a dependency confirmed or edited by the learner.
 

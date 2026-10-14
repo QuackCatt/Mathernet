@@ -2,9 +2,11 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from mathernet.api import handle_api_request
-from mathernet.gateway import GatewayConfig, GatewayStore
+from mathernet.gateway import GatewayConfig, GatewayStore, ProviderGateway
+from mathernet.providers import ProviderResponse
 from mathernet.repository import GraphRepository
 from mathernet.services import MathernetService
 
@@ -87,6 +89,59 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(config.mcp_tool_name, "web_search")
         self.assertEqual(config.mcp_headers, '{"Authorization":"Bearer local-token"}')
         self.assertNotIn("local-token", json.dumps(response.payload))
+
+    def test_structured_provider_requests_include_the_required_schema(self):
+        captured_request = {}
+
+        class FakeAdapter:
+            def complete(self, request):
+                captured_request["request"] = request
+                return ProviderResponse(
+                    text=json.dumps({
+                        "title": "Context",
+                        "introduction": "A useful exploration.",
+                        "sections": [],
+                        "sources": [],
+                        "warnings": [],
+                    }),
+                    raw={},
+                )
+
+        gateway = ProviderGateway(
+            GatewayConfig(provider="openai", api_key="test-key", model="test-model")
+        )
+        with patch("mathernet.gateway.adapter_for_config", return_value=FakeAdapter()):
+            gateway.deep_dive({"name": "Test formula"}, [])
+
+        request = captured_request["request"]
+        self.assertIn("Required JSON schema:", request.system_prompt)
+        self.assertIn('"introduction"', request.system_prompt)
+        self.assertIn('"sections"', request.system_prompt)
+        self.assertIn("Omit a topic instead of padding the article", request.system_prompt)
+
+    def test_formula_introduction_requests_include_the_local_skill(self):
+        captured_request = {}
+
+        class FakeAdapter:
+            def complete(self, request):
+                captured_request["request"] = request
+                introduction = " ".join(f"term{number}" for number in range(1, 121))
+                return ProviderResponse(
+                    text=json.dumps({"introduction": introduction}),
+                    raw={},
+                )
+
+        gateway = ProviderGateway(
+            GatewayConfig(provider="openai", api_key="test-key", model="test-model")
+        )
+        with patch("mathernet.gateway.adapter_for_config", return_value=FakeAdapter()):
+            introduction = gateway.introduce({"name": "Test formula"}, [])
+
+        request = captured_request["request"]
+        self.assertEqual(len(introduction.split()), 120)
+        self.assertIn("formula introduction skill", request.system_prompt)
+        self.assertIn("110-150 words", request.system_prompt)
+        self.assertIn("Required JSON schema:", request.system_prompt)
 
 
 if __name__ == "__main__":

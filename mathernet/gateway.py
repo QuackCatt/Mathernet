@@ -11,6 +11,25 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .agent_skills import (
+    FORMULA_CHAT_SKILL,
+    FORMULA_DEEP_DIVE_SCHEMA,
+    FORMULA_DEEP_DIVE_SKILL,
+    FORMULA_DISCOVERY_SCHEMA,
+    FORMULA_DISCOVERY_SKILL,
+    FORMULA_INTRODUCTION_SCHEMA,
+    FORMULA_INTRODUCTION_SKILL,
+    FormulaDiscovery,
+    build_formula_chat_prompt,
+    build_formula_deep_dive_prompt,
+    build_formula_discovery_prompt,
+    build_formula_introduction_prompt,
+    build_formula_synthesis_prompt,
+    load_agent_skill,
+    parse_formula_deep_dive,
+    parse_formula_discovery,
+    parse_formula_introduction,
+)
 from .errors import RetrievalError, SynthesisError, ValidationError
 from .http_client import open_url
 from .llm import SynthesisResult, parse_synthesis_result
@@ -162,18 +181,26 @@ class ProviderGateway:
         text = self._request("Reply with the word connected.")
         return {"ok": True, "message": text[:120] or "connected"}
 
+    def discover_formula(
+        self,
+        query: str,
+        library: list[dict[str, Any]],
+    ) -> FormulaDiscovery:
+        self._require_ai()
+        raw = self._request(
+            FORMULA_DISCOVERY_SKILL,
+            build_formula_discovery_prompt(query, library),
+            json_schema=FORMULA_DISCOVERY_SCHEMA,
+        )
+        return parse_formula_discovery(raw)
+
     def synthesize(self, query: str, sources: list[SearchResult]) -> SynthesisResult:
         self._require_ai()
         source_payload = [
             {"title": s.title, "url": s.url, "publisher": s.publisher, "excerpt": s.excerpt}
             for s in sources
         ]
-        system = (
-            "You are Mathernet, a study-only formula learning assistant. "
-            "When source material is supplied, use it as the factual boundary. When it is not supplied, use the model's built-in web search when available. "
-            "Never invent a citation, URL, formula, derivation, or dependency. If web results are unavailable, give a carefully qualified answer and return an empty sources list. "
-            "Return only valid JSON matching the requested schema. Do not solve exams or homework."
-        )
+        system = build_formula_synthesis_prompt(has_sources=bool(source_payload))
         prompt = json.dumps({
             "formula_request": query,
             "sources": source_payload,
@@ -187,14 +214,63 @@ class ProviderGateway:
             },
             "response_schema": SYNTHESIS_SCHEMA,
         }, ensure_ascii=False)
-        raw = self._request(system, prompt, structured=True)
+        raw = self._request(system, prompt, json_schema=SYNTHESIS_SCHEMA)
         return parse_synthesis_result(_extract_json(raw))
+
+    def deep_dive(
+        self,
+        formula: dict[str, Any],
+        sources: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        self._require_ai()
+        raw = self._request(
+            f"{FORMULA_DEEP_DIVE_SKILL}\n\n{load_agent_skill('formula_deep_dive')}",
+            build_formula_deep_dive_prompt(formula, sources),
+            json_schema=FORMULA_DEEP_DIVE_SCHEMA,
+        )
+        return parse_formula_deep_dive(_extract_json(raw))
+
+    def introduce(
+        self,
+        formula: dict[str, Any],
+        sources: list[dict[str, Any]],
+    ) -> str:
+        self._require_ai()
+        raw = self._request(
+            f"{FORMULA_INTRODUCTION_SKILL}\n\n{load_agent_skill('formula_introduction')}",
+            build_formula_introduction_prompt(formula, sources),
+            json_schema=FORMULA_INTRODUCTION_SCHEMA,
+        )
+        return parse_formula_introduction(_extract_json(raw))
+
+    def chat(
+        self,
+        formula: dict[str, Any],
+        deep_dive: dict[str, Any],
+        messages: list[dict[str, str]],
+    ) -> str:
+        self._require_ai()
+        return self._request(
+            f"{FORMULA_CHAT_SKILL}\n\n{load_agent_skill('formula_deep_dive')}",
+            build_formula_chat_prompt(formula, deep_dive, messages),
+        ).strip()
 
     def _require_ai(self) -> None:
         if not self.config.ai_configured:
             raise SynthesisError("AI provider is not configured")
 
-    def _request(self, system: str, user: str = "", structured: bool = False) -> str:
+    def _request(
+        self,
+        system: str,
+        user: str = "",
+        json_schema: dict[str, Any] | None = None,
+    ) -> str:
+        if json_schema is not None:
+            system = (
+                f"{system}\n"
+                "Required JSON schema:\n"
+                f"{json.dumps(json_schema, ensure_ascii=False, separators=(',', ':'))}"
+            )
         adapter = adapter_for_config(
             self.config.resolved_provider(),
             timeout_seconds=self.timeout_seconds,
@@ -205,7 +281,7 @@ class ProviderGateway:
                 api_key=self.config.api_key,
                 system_prompt=system,
                 user_prompt=user,
-                json_schema=SYNTHESIS_SCHEMA if structured else None,
+                json_schema=json_schema,
             )
         )
         return response.text

@@ -3,7 +3,8 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 
-from .errors import RefusalError, SynthesisError, ValidationError
+from .agent_skills import FormulaDiscovery
+from .errors import NotFoundError, RefusalError, SynthesisError, ValidationError
 from .llm import Synthesizer, SynthesisDependency, SynthesisResult
 from .models import (
     DependencyEdge,
@@ -49,15 +50,19 @@ class FormulaAgent:
         if existing is not None:
             return LearnResult(node=existing, created=False)
 
+        canonical_query, discovered, discovery = self._discover_formula(query)
+        if discovered is not None:
+            return LearnResult(node=discovered, created=False)
+
         direct_mode = self.search_provider is None
         if direct_mode:
             raw_results = []
         else:
             if hasattr(self.search_provider, "__enter__"):
                 with self.search_provider as provider:
-                    raw_results = provider.search(query, limit=5)
+                    raw_results = provider.search(canonical_query, limit=5)
             else:
-                raw_results = self.search_provider.search(query, limit=5)
+                raw_results = self.search_provider.search(canonical_query, limit=5)
         results = filter_approved_sources(raw_results, self.approved_publishers)
         if not direct_mode and not results:
             raise RefusalError(
@@ -65,7 +70,11 @@ class FormulaAgent:
                 RefusalReason.NO_RELIABLE_SOURCE.value,
             )
 
-        synthesis = self.synthesizer.synthesize(query, results)
+        synthesis = self.synthesizer.synthesize(canonical_query, results)
+        duplicate = self._find_synthesized_duplicate(synthesis, canonical_query)
+        if duplicate is not None:
+            return LearnResult(node=duplicate, created=False)
+
         citation_results = synthesis.sources if direct_mode else results
         if direct_mode and not citation_results:
             synthesis.ai_module.derivation_steps = []
@@ -74,12 +83,17 @@ class FormulaAgent:
                 "AI answer saved without source citations; verify important claims before relying on them."
             )
         source_records = self._validate_and_store_sources(synthesis, citation_results)
-        formula_id = stable_id("formula", formula_key(query))
+        formula_id = stable_id("formula", formula_key(synthesis.name or canonical_query))
         node = self.repository.add_formula(
             formula_id=formula_id,
-            name=synthesis.name or query,
+            name=synthesis.name or canonical_query,
             latex=synthesis.latex,
-            aliases=[query, *synthesis.aliases],
+            aliases=_unique_aliases(
+                query,
+                canonical_query,
+                *(discovery.aliases if discovery else ()),
+                *synthesis.aliases,
+            ),
             topic_tags=synthesis.topic_tags,
             ai_module=synthesis.ai_module,
             sources=[source.id for source in source_records],
@@ -100,6 +114,56 @@ class FormulaAgent:
             unresolved_dependencies=unresolved,
             warnings=warnings,
         )
+
+    def _discover_formula(
+        self,
+        query: str,
+    ) -> tuple[str, FormulaNode | None, FormulaDiscovery | None]:
+        discover = getattr(self.synthesizer, "discover_formula", None)
+        if not callable(discover):
+            return query, None, None
+        catalog = [
+            {
+                "id": node.id,
+                "name": node.name,
+                "aliases": node.aliases,
+                "latex": node.latex,
+            }
+            for node in self.repository.list_formulas()
+        ]
+        try:
+            discovery = discover(query, catalog)
+        except SynthesisError:
+            return query, None, None
+        if not isinstance(discovery, FormulaDiscovery):
+            return query, None, None
+        if discovery.local_formula_id:
+            try:
+                return (
+                    discovery.canonical_name or query,
+                    self.repository.get_formula(discovery.local_formula_id),
+                    discovery,
+                )
+            except NotFoundError:
+                pass
+        if discovery.canonical_name:
+            match = self.repository.find_formula(discovery.canonical_name)
+            if match is not None:
+                return discovery.canonical_name, match, discovery
+        return discovery.canonical_name or query, None, discovery
+
+    def _find_synthesized_duplicate(
+        self,
+        synthesis: SynthesisResult,
+        canonical_query: str,
+    ) -> FormulaNode | None:
+        for candidate in (synthesis.name, canonical_query, *synthesis.aliases):
+            if not candidate:
+                continue
+            match = self.repository.find_formula(candidate)
+            if match is not None:
+                return match
+        return None
 
     def _validate_and_store_sources(
         self, synthesis: SynthesisResult, results: list[SearchResult]
@@ -170,3 +234,16 @@ class FormulaAgent:
 def stable_id(prefix: str, *parts: str) -> str:
     digest = hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:16]
     return f"{prefix}_{digest}"
+
+
+def _unique_aliases(*values: str) -> list[str]:
+    aliases: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = value.strip()
+        key = formula_key(normalized)
+        if not normalized or key in seen:
+            continue
+        seen.add(key)
+        aliases.append(normalized)
+    return aliases

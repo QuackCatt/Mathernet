@@ -17,10 +17,10 @@
       rel="stylesheet"
     >
     <link rel="stylesheet" href="/vendor/katex/katex.min.css">
-    <link rel="stylesheet" href="/app.css?v=20261012-7">
+    <link rel="stylesheet" href="/app.css?v=20261013-1">
     <script src="/vendor/katex/katex.min.js" defer></script>
-    <script src="/graph.js?v=20261012-7" defer></script>
-    <script src="/app.js?v=20261012-7" defer></script>
+    <script src="/graph.js?v=20261013-1" defer></script>
+    <script src="/app.js?v=20261013-1" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#workspace">Skip to workspace</a>
@@ -35,9 +35,6 @@
       <symbol id="icon-search" viewBox="0 0 24 24">
         <circle cx="11" cy="11" r="6.5"></circle>
         <path d="M16 16l4 4"></path>
-      </symbol>
-      <symbol id="icon-plus" viewBox="0 0 24 24">
-        <path d="M12 5v14M5 12h14"></path>
       </symbol>
       <symbol id="icon-refresh" viewBox="0 0 24 24">
         <path d="M20 7v5h-5M4 17v-5h5"></path>
@@ -95,6 +92,18 @@
         <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z"></path>
         <path d="M19.4 13.2a7.8 7.8 0 0 0 0-2.4l2-1.5-2-3.4-2.3.9a7.8 7.8 0 0 0-2.1-1.2L14.6 3h-4l-.4 2.6a7.8 7.8 0 0 0-2.1 1.2l-2.3-.9-2 3.4 2 1.5a7.8 7.8 0 0 0 0 2.4l-2 1.5 2 3.4 2.3-.9a7.8 7.8 0 0 0 2.1 1.2l.4 2.6h4l.4-2.6a7.8 7.8 0 0 0 2.1-1.2l2.3.9 2-3.4-2-1.5z"></path>
       </symbol>
+      <symbol id="icon-arrow-right" viewBox="0 0 24 24">
+        <path d="M5 12h14M14 7l5 5-5 5"></path>
+      </symbol>
+      <symbol id="icon-send" viewBox="0 0 24 24">
+        <path d="M4 4l17 8-17 8 3-8-3-8zM7 12h14"></path>
+      </symbol>
+      <symbol id="icon-plus" viewBox="0 0 24 24">
+        <path d="M12 5v14M5 12h14"></path>
+      </symbol>
+      <symbol id="icon-trash" viewBox="0 0 24 24">
+        <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"></path>
+      </symbol>
     </svg>
 
     <header class="app-header">
@@ -102,35 +111,28 @@
         <span class="brand-mark" aria-hidden="true">
           <svg><use href="#icon-network"></use></svg>
         </span>
-        <span>
-          <strong>Mathernet</strong>
-          <small>Formula knowledge graph</small>
-        </span>
+        <strong>Mathernet</strong>
       </a>
 
       <form class="global-search" id="global-search" role="search">
-        <label class="sr-only" for="global-query">Find a formula</label>
+        <label class="sr-only" for="global-query">Search or learn a formula</label>
         <svg class="input-icon" aria-hidden="true"><use href="#icon-search"></use></svg>
         <input
           id="global-query"
           name="query"
           type="search"
           autocomplete="off"
-          placeholder="Find a formula or alias…"
+          placeholder="Search or describe a formula…"
           maxlength="200"
         >
-        <button class="button button-primary button-compact" type="submit">Search</button>
+        <button class="button button-primary button-compact" id="global-submit" type="submit">Search</button>
       </form>
 
       <div class="header-actions">
-        <div class="connection-state" id="connection-state" aria-live="polite">
+        <div class="connection-state" id="connection-state" aria-label="Service status" aria-live="polite">
           <span class="status-dot" aria-hidden="true"></span>
-          <span id="connection-label">Connecting…</span>
+          <span class="sr-only" id="connection-label">Connecting…</span>
         </div>
-        <button class="button button-secondary" id="open-learn" type="button">
-          <svg aria-hidden="true"><use href="#icon-plus"></use></svg>
-          Learn formula
-        </button>
         <button class="icon-button" id="refresh-data" type="button" aria-label="Refresh formula library">
           <svg aria-hidden="true"><use href="#icon-refresh"></use></svg>
         </button>
@@ -147,11 +149,7 @@
     <main class="workspace" id="workspace">
       <aside class="library-panel panel" data-panel="library" aria-labelledby="library-title">
         <div class="panel-heading">
-          <div>
-            <p class="section-kicker">Local graph</p>
-            <h1 id="library-title">Formula library</h1>
-          </div>
-          <span class="count" id="formula-count">0</span>
+          <h1 id="library-title">Formula library</h1>
         </div>
 
         <div class="library-controls">
@@ -167,9 +165,15 @@
             >
           </div>
           <div class="segmented-control" aria-label="Filter by study status">
-            <button class="segment is-active" type="button" data-status="" aria-pressed="true">All</button>
-            <button class="segment" type="button" data-status="learning" aria-pressed="false">Learning</button>
-            <button class="segment" type="button" data-status="reviewed" aria-pressed="false">Reviewed</button>
+            <button class="segment is-active" type="button" data-status="" aria-pressed="true">
+              All <span class="segment-count" data-status-count="all">(0)</span>
+            </button>
+            <button class="segment" type="button" data-status="learning" aria-pressed="false">
+              Learning <span class="segment-count" data-status-count="learning">(0)</span>
+            </button>
+            <button class="segment" type="button" data-status="reviewed" aria-pressed="false">
+              Reviewed <span class="segment-count" data-status-count="reviewed">(0)</span>
+            </button>
           </div>
         </div>
 
@@ -177,18 +181,11 @@
           <div class="loading-row">Loading formulas…</div>
         </div>
 
-        <div class="panel-footer">
-          <button class="button button-secondary button-full" id="library-learn" type="button">
-            <svg aria-hidden="true"><use href="#icon-plus"></use></svg>
-            Add a formula
-          </button>
-        </div>
       </aside>
 
       <section class="graph-panel panel" data-panel="graph" aria-labelledby="graph-title">
         <div class="graph-toolbar">
           <div>
-            <p class="section-kicker">Dependency constellation</p>
             <h2 id="graph-title">Mathematical relationships</h2>
           </div>
           <div class="graph-actions">
@@ -211,6 +208,7 @@
         </div>
 
         <div class="graph-stage" id="graph-stage">
+          <p class="sr-only" id="graph-description">Select a formula node to inspect its sources and study notes.</p>
           <svg
             id="graph-canvas"
             class="graph-canvas"
@@ -232,23 +230,17 @@
           </div>
         </div>
 
-        <div class="graph-footer">
-          <p id="graph-description">Select a formula node to inspect its sources and study notes.</p>
-          <div class="graph-legend" aria-label="Graph legend">
-            <span><i class="legend-line accepted"></i>Accepted relation</span>
-            <span><i class="legend-line suggested"></i>Needs confirmation</span>
-          </div>
-        </div>
       </section>
 
       <aside class="inspector-panel panel" data-panel="inspector" aria-labelledby="inspector-title">
         <div class="inspector-header">
-          <div>
-            <p class="section-kicker">Formula card</p>
-            <h2 id="inspector-title">Select a formula</h2>
-            <p class="inspector-formula" id="inspector-formula">Choose an item from the library or graph.</p>
+          <div class="inspector-heading-row">
+            <div class="inspector-heading-copy">
+              <p class="section-kicker">Formula card</p>
+              <h2 id="inspector-title">Select a formula</h2>
+            </div>
+            <span class="status-badge neutral" id="inspector-status">No selection</span>
           </div>
-          <span class="status-badge neutral" id="inspector-status">No selection</span>
         </div>
 
         <div class="inspector-tabs" role="tablist" aria-label="Formula details">
@@ -262,18 +254,6 @@
             data-tab="overview"
           >
             Overview
-          </button>
-          <button
-            class="inspector-tab"
-            id="tab-sources"
-            type="button"
-            role="tab"
-            aria-selected="false"
-            aria-controls="panel-sources"
-            data-tab="sources"
-            tabindex="-1"
-          >
-            Sources
           </button>
           <button
             class="inspector-tab"
@@ -307,22 +287,6 @@
 
           <section
             class="tab-panel"
-            id="panel-sources"
-            role="tabpanel"
-            aria-labelledby="tab-sources"
-            data-tab-panel="sources"
-            hidden
-          >
-            <div class="inspector-empty" id="sources-empty">
-              <svg aria-hidden="true"><use href="#icon-book"></use></svg>
-              <h3>No sources loaded</h3>
-              <p>Select a formula to inspect its references and excerpts.</p>
-            </div>
-            <div id="sources-content" hidden></div>
-          </section>
-
-          <section
-            class="tab-panel"
             id="panel-learning"
             role="tabpanel"
             aria-labelledby="tab-learning"
@@ -339,6 +303,59 @@
         </div>
       </aside>
     </main>
+
+    <dialog class="deep-dive-dialog" id="deep-dive-dialog" aria-labelledby="deep-dive-title">
+      <div class="deep-dive-shell">
+        <header class="deep-dive-header">
+          <div class="deep-dive-heading">
+            <p class="section-kicker">Deep dive</p>
+            <h2 id="deep-dive-title">Explore further</h2>
+            <div class="deep-dive-formula-scroll">
+              <p class="deep-dive-formula" id="deep-dive-formula"></p>
+            </div>
+          </div>
+          <div class="dialog-header-actions">
+            <button class="button button-secondary deep-session-new" id="deep-session-new" type="button">
+              <svg aria-hidden="true"><use href="#icon-plus"></use></svg>
+              <span id="deep-session-new-label">New session</span>
+            </button>
+            <button class="icon-button" id="deep-session-delete" type="button" aria-label="Delete current deep-dive session">
+              <svg aria-hidden="true"><use href="#icon-trash"></use></svg>
+            </button>
+            <button class="icon-button" type="button" data-close-dialog="deep-dive-dialog" aria-label="Close deep dive">
+              <svg aria-hidden="true"><use href="#icon-x"></use></svg>
+            </button>
+          </div>
+        </header>
+        <nav class="deep-session-bar" aria-label="Deep-dive sessions">
+          <span class="deep-session-label">Sessions</span>
+          <div class="deep-session-list" id="deep-session-list"></div>
+        </nav>
+
+        <div class="deep-dive-content" id="deep-dive-content" aria-live="polite"></div>
+
+        <form class="deep-chat" id="deep-chat-form">
+          <div class="deep-chat-heading">
+            <strong>Continue the conversation</strong>
+            <span id="deep-chat-status">Ask about the history, uses, or meaning of this formula.</span>
+          </div>
+          <div class="deep-chat-composer">
+            <label class="sr-only" for="deep-chat-input">Ask a follow-up question</label>
+            <textarea
+              id="deep-chat-input"
+              name="message"
+              rows="2"
+              maxlength="2000"
+              placeholder="Ask a follow-up question…"
+            ></textarea>
+            <button class="button button-primary" id="deep-chat-submit" type="submit">
+              <svg aria-hidden="true"><use href="#icon-send"></use></svg>
+              Ask
+            </button>
+          </div>
+        </form>
+      </div>
+    </dialog>
 
     <dialog class="dialog settings-dialog" id="settings-dialog" aria-labelledby="settings-title">
       <form id="settings-form" novalidate>
@@ -430,45 +447,6 @@
           <div class="dialog-action-spacer"></div>
           <button class="button button-quiet" id="settings-cancel" type="button" data-close-dialog="settings-dialog">Cancel</button>
           <button class="button button-primary" id="settings-save" type="submit">Save provider</button>
-        </div>
-      </form>
-    </dialog>
-
-    <dialog class="dialog" id="learn-dialog" aria-labelledby="learn-title">
-      <form id="learn-form" novalidate>
-        <div class="dialog-header">
-          <div>
-            <p class="section-kicker">Source-backed learning</p>
-            <h2 id="learn-title">Learn a formula</h2>
-          </div>
-          <button class="icon-button" type="button" data-close-dialog="learn-dialog" aria-label="Close">
-            <svg aria-hidden="true"><use href="#icon-x"></use></svg>
-          </button>
-        </div>
-        <p class="dialog-copy">
-          Mathernet asks your configured AI provider to create a formula card. Real citations are saved when supplied; any dependency remains a suggestion until you confirm it.
-        </p>
-        <div class="field">
-          <label for="learn-query">Formula name or expression</label>
-          <input
-            id="learn-query"
-            name="query"
-            type="text"
-            autocomplete="off"
-            maxlength="200"
-            placeholder="For example, quadratic formula…"
-            aria-describedby="learn-hint learn-error"
-            required
-          >
-          <p class="field-hint" id="learn-hint">Use a formula name, plain-language expression, or LaTeX string.</p>
-          <p class="field-error" id="learn-error" role="alert"></p>
-        </div>
-        <div class="dialog-actions">
-          <button class="button button-secondary" type="button" data-close-dialog="learn-dialog">Cancel</button>
-          <button class="button button-primary" id="learn-submit" type="submit">
-            <svg aria-hidden="true"><use href="#icon-search"></use></svg>
-            Find and learn
-          </button>
         </div>
       </form>
     </dialog>

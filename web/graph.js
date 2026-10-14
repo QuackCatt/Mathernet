@@ -2,7 +2,6 @@
   "use strict";
 
   const SVG_NS = "http://www.w3.org/2000/svg";
-  const XHTML_NS = "http://www.w3.org/1999/xhtml";
 
   function svgElement(name, attributes = {}) {
     const element = document.createElementNS(SVG_NS, name);
@@ -21,25 +20,27 @@
     return output >>> 0;
   }
 
-  function renderLatex(element, latex, displayMode = false) {
-    const source = String(latex || "").trim();
-    if (!source) return;
-    if (window.katex) {
-      try {
-        element.innerHTML = window.katex.renderToString(source, {
-          displayMode,
-          throwOnError: false,
-          strict: "ignore",
-          trust: false,
-          output: "html",
-        });
-        element.classList.add("has-katex");
-        return;
-      } catch {
-        element.classList.remove("has-katex");
+  function labelLines(value) {
+    const words = String(value || "").trim().split(/\s+/);
+    const lines = [""];
+    for (const word of words) {
+      const current = lines[lines.length - 1];
+      const candidate = current ? `${current} ${word}` : word;
+      if (candidate.length <= 25 || !current) {
+        lines[lines.length - 1] = candidate;
+      } else if (lines.length === 1) {
+        lines.push(word);
+      } else {
+        lines[1] = `${lines[1]} ${word}`;
       }
     }
-    element.textContent = source;
+    if (lines.length > 2) {
+      lines.length = 2;
+      lines[1] = `${lines[1].slice(0, 23).trim()}…`;
+    } else if (lines[1]?.length > 25) {
+      lines[1] = `${lines[1].slice(0, 24).trim()}…`;
+    }
+    return lines;
   }
 
   class FormulaGraph {
@@ -184,21 +185,15 @@
         y: 34,
         "text-anchor": "middle",
       });
-      label.textContent = node.name;
-      const formula = svgElement("foreignObject", {
-        class: "node-math",
-        x: -108,
-        y: 42,
-        width: 216,
-        height: 52,
+      labelLines(node.name).forEach((line, index) => {
+        const row = svgElement("tspan", {
+          x: 0,
+          y: index === 0 ? 34 : 52,
+        });
+        row.textContent = line;
+        label.append(row);
       });
-      const formulaBody = document.createElementNS(XHTML_NS, "div");
-      formulaBody.setAttribute("class", "node-math-body");
-      formulaBody.setAttribute("role", "math");
-      formulaBody.setAttribute("aria-label", node.latex || node.display || node.name);
-      renderLatex(formulaBody, node.latex);
-      formula.append(formulaBody);
-      group.append(hitArea, halo, surface, label, formula);
+      group.append(hitArea, halo, surface, label);
 
       group.addEventListener("pointerenter", () => {
         this.hoveredId = node.id;
@@ -376,7 +371,7 @@
           a.vy -= (dy / distance) * repulsion;
           b.vx += (dx / distance) * repulsion;
           b.vy += (dy / distance) * repulsion;
-          const collision = 92 - distance;
+          const collision = 148 - distance;
           if (collision > 0) {
             const push = collision * 0.025 * alpha;
             a.vx -= (dx / distance) * push;
@@ -461,12 +456,12 @@
     fit() {
       if (!this.nodes.length) return;
       const values = [...this.positions.values()];
-      const minX = Math.min(...values.map((position) => position.x - 110));
-      const maxX = Math.max(...values.map((position) => position.x + 110));
-      const minY = Math.min(...values.map((position) => position.y - 32));
-      const maxY = Math.max(...values.map((position) => position.y + 108));
-      const contentWidth = Math.max(220, maxX - minX);
-      const contentHeight = Math.max(180, maxY - minY);
+      const minX = Math.min(...values.map((position) => position.x - 138));
+      const maxX = Math.max(...values.map((position) => position.x + 138));
+      const minY = Math.min(...values.map((position) => position.y - 38));
+      const maxY = Math.max(...values.map((position) => position.y + 72));
+      const contentWidth = Math.max(276, maxX - minX);
+      const contentHeight = Math.max(150, maxY - minY);
       const scale = Math.min(1.35, Math.max(0.55, Math.min(
         (this.width - 56) / contentWidth,
         (this.height - 56) / contentHeight,

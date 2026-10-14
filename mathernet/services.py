@@ -7,7 +7,9 @@ from typing import Any, Protocol
 
 from .agent import FormulaAgent, LearnResult
 from .config import Settings
+from .deep_dive_sessions import DeepDiveSessionStore, MAX_SESSION_MESSAGE_LENGTH, MAX_SESSION_REPLY_LENGTH
 from .errors import ConflictError, NotFoundError, ValidationError
+from .formula_introductions import FormulaIntroductionStore
 from .llm import OpenAIResponsesSynthesizer, RuleBasedSynthesizer
 from .gateway import GatewayConfig, GatewayStore, ProviderGateway, SearchGateway
 from .models import (
@@ -33,16 +35,43 @@ class LearningAgent(Protocol):
     def learn(self, query: str) -> LearnResult: ...
 
 
+class DeepDiveGateway(Protocol):
+    def introduce(
+        self,
+        formula: dict[str, Any],
+        sources: list[dict[str, Any]],
+    ) -> str: ...
+
+    def deep_dive(
+        self,
+        formula: dict[str, Any],
+        sources: list[dict[str, Any]],
+    ) -> dict[str, Any]: ...
+
+    def chat(
+        self,
+        formula: dict[str, Any],
+        deep_dive: dict[str, Any],
+        messages: list[dict[str, str]],
+    ) -> str: ...
+
+
 class MathernetService:
     def __init__(
         self,
         repository: GraphRepository,
         agent: LearningAgent | None = None,
         gateway_store: GatewayStore | None = None,
+        ai_gateway: DeepDiveGateway | None = None,
+        deep_dive_sessions: DeepDiveSessionStore | None = None,
+        formula_introductions: FormulaIntroductionStore | None = None,
     ):
         self.repository = repository
         self.agent = agent
         self.gateway_store = gateway_store or GatewayStore()
+        self.ai_gateway = ai_gateway
+        self.deep_dive_sessions = deep_dive_sessions or DeepDiveSessionStore()
+        self.formula_introductions = formula_introductions or FormulaIntroductionStore()
 
     def gateway_config(self) -> dict[str, Any]:
         config = self.gateway_store.load()
@@ -123,6 +152,7 @@ class MathernetService:
     def _rebuild_agent(self, config: GatewayConfig) -> None:
         publishers = getattr(self.agent, "approved_publishers", ())
         synthesizer = ProviderGateway(config) if config.ai_configured else RuleBasedSynthesizer()
+        self.ai_gateway = synthesizer if isinstance(synthesizer, ProviderGateway) else None
         self.agent = FormulaAgent(
             self.repository,
             SearchGateway(config).provider(),
@@ -178,22 +208,28 @@ class MathernetService:
         normalized_topic = normalize_text(topic) if topic else ""
 
         items = []
+        status_counts = {"all": 0, "learning": 0, "reviewed": 0}
         query_key = formula_key(query)
         for node in self.repository.list_formulas():
             identities = [node.id, node.name, *node.aliases]
             if query_key and not any(query_key in formula_key(item) for item in identities):
                 continue
-            if parsed_status is not None and node.status != parsed_status:
-                continue
             if normalized_topic and normalized_topic.casefold() not in {
                 item.casefold() for item in node.topic_tags
             }:
+                continue
+            status_counts["all"] += 1
+            status_value = node.status.value
+            if status_value in status_counts:
+                status_counts[status_value] += 1
+            if parsed_status is not None and node.status != parsed_status:
                 continue
             items.append(self._formula_summary(node))
 
         return {
             "items": items[offset : offset + limit],
             "total": len(items),
+            "status_counts": status_counts,
             "limit": limit,
             "offset": offset,
             "revision": self.revision,
@@ -202,6 +238,20 @@ class MathernetService:
     def get_formula_card(self, formula_ref: str) -> dict[str, Any]:
         node = self.resolve_formula(formula_ref)
         return self._formula_card(node)
+
+    def get_formula_introduction(self, formula_ref: str) -> dict[str, Any]:
+        node = self.resolve_formula(formula_ref)
+        cached = self.formula_introductions.get(node.id)
+        if cached is not None:
+            return {**cached, "cached": True}
+
+        card = self._formula_card(node)
+        introduction = self._require_ai_gateway().introduce(
+            self._formula_context(node),
+            card["sources"],
+        )
+        saved = self.formula_introductions.save(node.id, introduction)
+        return {**saved, "cached": False}
 
     def get_edge_payload(self, edge_id: str) -> dict[str, Any]:
         return self._edge_payload(self.repository.get_edge(edge_id))
@@ -357,6 +407,60 @@ class MathernetService:
             "revision": self.revision,
         }
 
+    def list_deep_dive_sessions(self, formula_ref: str) -> list[dict[str, Any]]:
+        node = self.resolve_formula(formula_ref)
+        return self.deep_dive_sessions.list(node.id)
+
+    def create_deep_dive_session(self, formula_ref: str) -> dict[str, Any]:
+        node = self.resolve_formula(formula_ref)
+
+        card = self._formula_card(node)
+        gateway = self._require_ai_gateway()
+        generated = gateway.deep_dive(
+            self._formula_context(node),
+            card["sources"],
+        )
+        sources = self._merge_sources(card["sources"], generated.get("sources", []))
+        return self.deep_dive_sessions.create(
+            node.id,
+            {
+                "title": generated["title"],
+                "article": generated["article"],
+                "sources": sources,
+                "warnings": generated["warnings"],
+            },
+        )
+
+    def get_deep_dive_session(self, formula_ref: str, session_id: str) -> dict[str, Any]:
+        node = self.resolve_formula(formula_ref)
+        return self.deep_dive_sessions.get(node.id, session_id)
+
+    def delete_deep_dive_session(self, formula_ref: str, session_id: str) -> dict[str, Any]:
+        node = self.resolve_formula(formula_ref)
+        self.deep_dive_sessions.delete(node.id, session_id)
+        return {"deleted": True, "formula_id": node.id, "session_id": session_id}
+
+    def chat_deep_dive(
+        self,
+        formula_ref: str,
+        session_id: str,
+        message: str,
+    ) -> dict[str, Any]:
+        node = self.resolve_formula(formula_ref)
+        message = validate_bounded_text(message, "message", max_length=MAX_SESSION_MESSAGE_LENGTH)
+        session = self.deep_dive_sessions.get(node.id, session_id)
+        messages = list(session.get("messages", []))
+        messages.append({"role": "user", "content": message})
+        reply = self._require_ai_gateway().chat(
+            self._formula_context(node),
+            {"title": session["title"], "article": session["article"], "sources": session["sources"]},
+            messages[-20:],
+        )
+        reply = validate_bounded_text(reply, "reply", max_length=MAX_SESSION_REPLY_LENGTH)
+        session = self.deep_dive_sessions.append_message(node.id, session_id, "user", message)
+        session = self.deep_dive_sessions.append_message(node.id, session_id, "assistant", reply)
+        return {"reply": reply, "session": session}
+
     def export_graph(self) -> dict[str, Any]:
         return self.repository.document.to_dict()
 
@@ -400,6 +504,75 @@ class MathernetService:
             "outgoing_edges": [self._edge_payload(edge) for edge in outgoing],
             "revision": self.revision,
         }
+
+    def _formula_context(self, node: FormulaNode) -> dict[str, Any]:
+        ai_module = node.ai_module
+        return {
+            "id": node.id,
+            "name": node.name,
+            "latex": node.latex,
+            "aliases": node.aliases,
+            "topic_tags": node.topic_tags,
+            "ai_module": {
+                "summary": ai_module.summary,
+                "explanation": ai_module.explanation,
+                "derivation_steps": ai_module.derivation_steps,
+            },
+        }
+
+    def _require_ai_gateway(self) -> DeepDiveGateway:
+        if self.ai_gateway is not None:
+            return self.ai_gateway
+        config = self.gateway_store.load()
+        if not config.ai_configured:
+            raise ValidationError("AI provider is not configured")
+        self.ai_gateway = ProviderGateway(config)
+        return self.ai_gateway
+
+    @staticmethod
+    def _merge_sources(
+        existing: list[dict[str, Any]],
+        generated: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        merged = []
+        seen = set()
+        for source in [*existing, *generated]:
+            url = str(source.get("url", "")).strip()
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            merged.append(
+                {
+                    "title": str(source.get("title", "")).strip() or url,
+                    "url": url,
+                    "publisher": str(source.get("publisher", "")).strip() or "Reference",
+                }
+            )
+        return merged[:10]
+
+    @staticmethod
+    def _validate_chat_history(history: list[dict[str, str]]) -> list[dict[str, str]]:
+        if not isinstance(history, list) or len(history) > 20:
+            raise ValidationError("history must contain at most 20 messages")
+        messages = []
+        for index, item in enumerate(history):
+            if not isinstance(item, dict):
+                raise ValidationError(f"history[{index}] must be an object")
+            role = item.get("role")
+            content = item.get("content")
+            if role not in {"user", "assistant"} or not isinstance(content, str):
+                raise ValidationError(f"history[{index}] is invalid")
+            messages.append(
+                {
+                    "role": role,
+                    "content": validate_bounded_text(
+                        content,
+                        f"history[{index}].content",
+                        max_length=4_000,
+                    ),
+                }
+            )
+        return messages
 
     def _edge_payload(self, edge: DependencyEdge) -> dict[str, Any]:
         source = self.repository.get_formula(edge.source_id)
@@ -484,4 +657,15 @@ def build_service(settings: Settings) -> MathernetService:
         synthesizer,
         settings.approved_publishers,
     )
-    return MathernetService(repository, agent, gateway_store)
+    return MathernetService(
+        repository,
+        agent,
+        gateway_store,
+        synthesizer if isinstance(synthesizer, ProviderGateway) else None,
+        deep_dive_sessions=DeepDiveSessionStore(
+            settings.search_cache_path.parent / "deep_dive_sessions.json"
+        ),
+        formula_introductions=FormulaIntroductionStore(
+            settings.search_cache_path.parent / "formula_introductions.json"
+        ),
+    )

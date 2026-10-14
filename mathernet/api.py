@@ -94,6 +94,39 @@ def handle_api_request(
                 ),
             )
 
+        introduction_match = re.fullmatch(r"/api/formulas/([^/]+)/introduction", path)
+        if introduction_match and method == "POST":
+            _require_body(body, set(), set())
+            return ApiResponse(200, service.get_formula_introduction(introduction_match.group(1)))
+
+        deep_sessions_match = re.fullmatch(r"/api/formulas/([^/]+)/deep-dive/sessions", path)
+        if deep_sessions_match:
+            if method == "GET":
+                return ApiResponse(200, {"sessions": service.list_deep_dive_sessions(deep_sessions_match.group(1))})
+            if method == "POST":
+                _require_body(body, set(), set())
+                return ApiResponse(201, service.create_deep_dive_session(deep_sessions_match.group(1)))
+
+        deep_session_match = re.fullmatch(r"/api/formulas/([^/]+)/deep-dive/sessions/([^/]+)", path)
+        if deep_session_match:
+            formula_id, session_id = deep_session_match.groups()
+            if method == "GET":
+                return ApiResponse(200, service.get_deep_dive_session(formula_id, session_id))
+            if method == "DELETE":
+                return ApiResponse(200, service.delete_deep_dive_session(formula_id, session_id))
+
+        deep_chat_match = re.fullmatch(r"/api/formulas/([^/]+)/deep-dive/sessions/([^/]+)/chat", path)
+        if deep_chat_match and method == "POST":
+            payload = _require_body(body, {"message"}, set())
+            return ApiResponse(
+                200,
+                service.chat_deep_dive(
+                    deep_chat_match.group(1),
+                    deep_chat_match.group(2),
+                    _required_string(payload, "message"),
+                ),
+            )
+
         user_module_match = re.fullmatch(r"/api/formulas/([^/]+)/user-module", path)
         if user_module_match and method == "PATCH":
             payload = _require_body(body, {"notes"}, {"expected_updated_at"})
@@ -229,6 +262,20 @@ def openapi_document() -> dict[str, Any]:
             "/api/learn": {"post": {"summary": "Create or reuse a source-backed formula card"}},
             "/api/formulas/{formula_id}": {"get": {"summary": "Read a complete formula card"}},
             "/api/formulas/{formula_id}/graph": {"get": {"summary": "Read a bounded graph neighbourhood"}},
+            "/api/formulas/{formula_id}/introduction": {
+                "post": {"summary": "Generate or reuse a concise formula introduction"}
+            },
+            "/api/formulas/{formula_id}/deep-dive/sessions": {
+                "get": {"summary": "List preserved deep-dive sessions"},
+                "post": {"summary": "Generate a new deep-dive session"},
+            },
+            "/api/formulas/{formula_id}/deep-dive/sessions/{session_id}": {
+                "get": {"summary": "Read one deep-dive session"},
+                "delete": {"summary": "Delete one deep-dive session"},
+            },
+            "/api/formulas/{formula_id}/deep-dive/sessions/{session_id}/chat": {
+                "post": {"summary": "Continue a deep-dive session conversation"}
+            },
             "/api/formulas/{formula_id}/user-module": {"patch": {"summary": "Update personal notes"}},
             "/api/formulas/{formula_id}/status": {"patch": {"summary": "Update study status"}},
             "/api/edges": {"post": {"summary": "Propose a source-backed dependency edge"}},

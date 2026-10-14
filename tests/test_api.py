@@ -32,6 +32,12 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(health.status, 200)
         self.assertEqual(health.payload["formula_count"], 3)
 
+        formulas = handle_api_request(self.service, "GET", "/api/formulas")
+        self.assertEqual(
+            formulas.payload["status_counts"],
+            {"all": 3, "learning": 1, "reviewed": 1},
+        )
+
         card = handle_api_request(
             self.service,
             "GET",
