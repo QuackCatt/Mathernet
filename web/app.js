@@ -32,6 +32,7 @@ const state = {
   introductionRequest: 0,
   gateway: null,
   firstRun: true,
+  providerDrafts: {},
 };
 
 const elements = {
@@ -76,14 +77,14 @@ const elements = {
   themeToggle: document.querySelector("#theme-toggle"),
   toggleLeftPanel: document.querySelector("#toggle-left-panel"),
   toggleRightPanel: document.querySelector("#toggle-right-panel"),
+  aiConnectionIndicator: document.querySelector("#ai-connection-indicator"),
+  aiConnectionLabel: document.querySelector("#ai-connection-label"),
   settingsDialog: document.querySelector("#settings-dialog"),
   settingsForm: document.querySelector("#settings-form"),
   settingsProvider: document.querySelector("#settings-provider"),
-  settingsApiKey: document.querySelector("#settings-api-key"),
-  settingsModel: document.querySelector("#settings-model"),
+  providerForm: document.querySelector("#provider-form"),
   settingsError: document.querySelector("#settings-error"),
   settingsAiState: document.querySelector("#settings-ai-state"),
-  settingsAiMessage: document.querySelector("#settings-ai-message"),
   settingsSave: document.querySelector("#settings-save"),
 };
 
@@ -1020,6 +1021,7 @@ async function loadFormulaIntroduction(formulaId) {
   } catch (error) {
     if (requestId !== state.introductionRequest || state.selectedId !== formulaId) return;
     state.introductionError = error.message;
+    showToast(error.message, "error");
   } finally {
     if (requestId === state.introductionRequest && state.selectedId === formulaId) {
       state.introductionLoading = false;
@@ -1077,8 +1079,118 @@ function setSettingsState(element, kind, label) {
   element.classList.toggle("is-error", kind === "error");
 }
 
+function setConnectionIndicator(status, label) {
+  const normalized = ["connected", "check_settings"].includes(status) ? status : "checking";
+  if (elements.aiConnectionIndicator) {
+    elements.aiConnectionIndicator.dataset.state = normalized;
+    elements.aiConnectionIndicator.title = `AI connection: ${label}`;
+  }
+  if (elements.aiConnectionLabel) {
+    elements.aiConnectionLabel.textContent = `AI connection: ${label}`;
+  }
+}
+
 function providerPreset(provider) {
   return state.gateway?.provider_presets?.find((preset) => preset.id === provider);
+}
+
+function providerDraft(provider) {
+  if (!state.providerDrafts[provider]) state.providerDrafts[provider] = {};
+  return state.providerDrafts[provider];
+}
+
+function captureProviderDraft(provider) {
+  if (!provider || elements.settingsProvider.value !== provider) return;
+  const draft = providerDraft(provider);
+  const apiKey = document.querySelector("#settings-api-key");
+  const model = document.querySelector("#settings-model");
+  if (apiKey) draft.apiKey = apiKey.value;
+  if (model) draft.model = model.value;
+}
+
+function renderProviderForm(provider) {
+  const preset = providerPreset(provider);
+  if (!preset) {
+    elements.providerForm.innerHTML = `
+      <div class="provider-form-empty">
+        <p class="section-kicker">Provider setup</p>
+        <h3>Choose an AI provider</h3>
+        <p>Connection fields will appear here.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const draft = providerDraft(provider);
+  const savedForProvider = state.gateway?.provider === provider ? state.gateway : null;
+  const keyHint = savedForProvider?.api_key_hint
+    ? `Saved key ${savedForProvider.api_key_hint}`
+    : "Paste your API key";
+  const modelField = preset.managed_model
+    ? `
+      <div class="managed-model">
+        <div>
+          <p class="managed-model-label">Managed model</p>
+          <strong>${escapeHTML(preset.default_model)}</strong>
+        </div>
+        <span class="managed-model-badge">Automatic</span>
+      </div>
+      <p class="field-hint">Mathernet selects DeepSeek's stable chat model automatically. No model ID is required.</p>
+    `
+    : `
+      <div class="field">
+        <div class="field-label-row">
+          <label for="settings-model">Model route</label>
+          <button class="button button-quiet button-small" id="load-provider-models" type="button">
+            ${icon("refresh")}
+            Load models
+          </button>
+        </div>
+        <input
+          id="settings-model"
+          name="model"
+          type="text"
+          autocomplete="off"
+          list="provider-model-options"
+          placeholder="provider/model-id"
+          value="${escapeHTML(draft.model ?? savedForProvider?.model ?? preset.default_model ?? "")}"
+          spellcheck="false"
+        >
+        <datalist id="provider-model-options"></datalist>
+        <p class="field-hint">OpenRouter sends each request to this exact routed model ID.</p>
+      </div>
+    `;
+
+  elements.providerForm.innerHTML = `
+    <div class="provider-form-heading">
+      <div>
+        <p class="section-kicker">${escapeHTML(preset.label)} connection</p>
+        <h3 id="provider-form-title">${preset.managed_model ? "Connect with an API key" : "Connect and choose a route"}</h3>
+        <p class="provider-form-description">${escapeHTML(preset.description)}</p>
+      </div>
+      <a class="provider-account-link" href="${escapeHTML(preset.api_key_url)}" target="_blank" rel="noreferrer">
+        API keys
+        ${icon("external")}
+      </a>
+    </div>
+    <div class="field">
+      <label for="settings-api-key">API key</label>
+      <input
+        id="settings-api-key"
+        name="api_key"
+        type="password"
+        autocomplete="off"
+        placeholder="${escapeHTML(keyHint)}"
+        value="${escapeHTML(draft.apiKey ?? "")}"
+        spellcheck="false"
+      >
+      <p class="field-hint">Stored locally and never shown after saving.</p>
+    </div>
+    ${modelField}
+    <p class="settings-status" id="settings-ai-message" role="status"></p>
+  `;
+
+  document.querySelector("#load-provider-models")?.addEventListener("click", loadProviderModels);
 }
 
 function syncProviderOptions(provider) {
@@ -1087,32 +1199,63 @@ function syncProviderOptions(provider) {
     radio.checked = radio.value === provider;
     radio.closest(".provider-option")?.classList.toggle("is-selected", radio.checked);
   });
+  renderProviderForm(provider);
+  if (!provider) {
+    setSettingsState(elements.settingsAiState, "idle", "Choose provider");
+  } else if (state.gateway?.provider !== provider) {
+    setSettingsState(elements.settingsAiState, "idle", "Not tested");
+  } else if (!state.gateway?.ai_configured) {
+    setSettingsState(elements.settingsAiState, "idle", "Not configured");
+  } else if (state.gateway?.ai_connection_status === "connected") {
+    setSettingsState(elements.settingsAiState, "success", "Connected");
+  } else if (state.gateway?.ai_connection_status === "check_settings") {
+    setSettingsState(elements.settingsAiState, "error", "Check settings");
+  } else {
+    setSettingsState(elements.settingsAiState, "idle", "Checking…");
+  }
 }
 
 function gatewayPayload() {
-  return {
+  const payload = {
     provider: elements.settingsProvider.value,
-    api_key: elements.settingsApiKey.value.trim(),
-    model: elements.settingsModel.value.trim(),
+    api_key: document.querySelector("#settings-api-key")?.value.trim() || "",
   };
+  const model = document.querySelector("#settings-model")?.value.trim();
+  if (model) payload.model = model;
+  return payload;
 }
 
 function applyGatewayConfig(config) {
   state.gateway = config;
   state.firstRun = Boolean(config.first_run);
-  syncProviderOptions(config.provider || "");
-  elements.settingsModel.value = config.model || "";
-  elements.settingsApiKey.value = "";
-  elements.settingsApiKey.placeholder = config.api_key_hint ? `Saved key ${config.api_key_hint}` : "Paste a new key";
-  setSettingsState(elements.settingsAiState, config.ai_configured ? "success" : "idle", config.ai_configured ? "Connected" : "Not connected");
+  const provider = config.provider || "";
+  if (provider) {
+    state.providerDrafts[provider] = {
+      ...(state.providerDrafts[provider] || {}),
+      apiKey: "",
+      model: config.model || "",
+    };
+  }
+  syncProviderOptions(provider);
+  const connectionLabel =
+    config.ai_connection_status === "connected"
+      ? "Connected"
+      : config.ai_connection_status === "check_settings"
+        ? "Check settings"
+        : config.ai_configured
+          ? "Checking…"
+          : "Not configured";
+  setConnectionIndicator(config.ai_connection_status, connectionLabel);
 }
 
 async function loadGatewaySettings() {
   try {
-    applyGatewayConfig(await api("/api/gateway"));
+    const config = await api("/api/gateway");
+    applyGatewayConfig(config);
     if (state.firstRun) {
-      elements.settingsDialog.showModal();
-      window.setTimeout(() => document.querySelector(".provider-radio")?.focus(), 0);
+      openSettingsDialog();
+    } else if (config.ai_configured) {
+      refreshGatewayConnection();
     }
   } catch (error) {
     showToast(error.message, "error");
@@ -1121,15 +1264,53 @@ async function loadGatewaySettings() {
 
 function openSettingsDialog() {
   elements.settingsError.textContent = "";
-  elements.settingsAiMessage.textContent = "";
+  const message = document.querySelector("#settings-ai-message");
+  if (message) message.textContent = "";
   elements.settingsDialog.showModal();
+  if (state.gateway?.ai_configured) refreshGatewayConnection();
 }
 
 function validateGatewayPayload(payload) {
   if (!payload.provider) return "Choose an AI provider.";
-  if (!payload.api_key && !state.gateway?.api_key_hint) return "Enter an API key for the selected provider.";
-  if (!payload.model) return "Enter the model you want to use.";
+  const preset = providerPreset(payload.provider);
+  const savedForProvider = state.gateway?.provider === payload.provider ? state.gateway : null;
+  if (!payload.api_key && !savedForProvider?.api_key_hint) return "Enter an API key for the selected provider.";
+  if (preset?.model_required && !payload.model) return "Choose the OpenRouter model route to use.";
   return "";
+}
+
+async function loadProviderModels() {
+  const provider = elements.settingsProvider.value;
+  const preset = providerPreset(provider);
+  const button = document.querySelector("#load-provider-models");
+  const input = document.querySelector("#settings-model");
+  const datalist = document.querySelector("#provider-model-options");
+  const apiKey = document.querySelector("#settings-api-key")?.value.trim() || "";
+  const savedForProvider = state.gateway?.provider === provider ? state.gateway : null;
+  if (!preset?.models_endpoint_path || !input || !datalist) return;
+  if (!apiKey && !savedForProvider?.api_key_hint) {
+    elements.settingsError.textContent = "Enter the OpenRouter API key before loading models.";
+    document.querySelector("#settings-api-key")?.focus();
+    return;
+  }
+
+  setBusy(button, true, "Loading…");
+  elements.settingsError.textContent = "";
+  try {
+    const result = await api("/api/gateway/models", {
+      method: "POST",
+      body: JSON.stringify({ provider, api_key: apiKey }),
+    });
+    datalist.innerHTML = result.models
+      .map((model) => `<option value="${escapeHTML(model.id)}">${escapeHTML(model.name)}</option>`)
+      .join("");
+    if (!input.value.trim() && result.default_model) input.value = result.default_model;
+    showToast(`${result.models.length} model routes loaded.`);
+  } catch (error) {
+    elements.settingsError.textContent = error.message;
+  } finally {
+    setBusy(button, false);
+  }
 }
 
 async function saveGatewaySettings(silent = false) {
@@ -1140,11 +1321,12 @@ async function saveGatewaySettings(silent = false) {
   setBusy(elements.settingsSave, true, "Saving…");
   try {
     applyGatewayConfig(await api("/api/gateway", { method: "PATCH", body: JSON.stringify(payload) }));
-    if (!silent) {
+    const connected = await refreshGatewayConnection();
+    if (!silent && connected) {
       closeDialog(elements.settingsDialog);
       showToast("Connection settings saved locally.");
     }
-    return true;
+    return connected;
   } catch (requestError) {
     elements.settingsError.textContent = requestError.message;
     return false;
@@ -1154,21 +1336,45 @@ async function saveGatewaySettings(silent = false) {
 }
 
 async function testGatewayConnection() {
-  if (!(await saveGatewaySettings(true))) return;
+  await saveGatewaySettings(true);
+}
+
+async function refreshGatewayConnection() {
   const button = document.querySelector("#test-ai");
-  const message = elements.settingsAiMessage;
+  const message = document.querySelector("#settings-ai-message");
   setBusy(button, true, "Testing…");
-  message.textContent = "";
-  message.className = "settings-status";
+  if (message) {
+    message.textContent = "";
+    message.className = "settings-status";
+  }
   try {
-    await api("/api/gateway/test-ai", { method: "POST" });
-    message.textContent = "Connection is ready.";
-    message.classList.add("is-success");
+    const result = await api("/api/gateway/test-ai", { method: "POST" });
+    state.gateway = {
+      ...(state.gateway || {}),
+      ai_connection_status: result.ai_connection_status || "connected",
+      ai_connection_message: result.message || "connected",
+      ai_connection_checked_at: result.ai_connection_checked_at || "",
+    };
+    if (message) {
+      message.textContent = "Connection is ready.";
+      message.classList.add("is-success");
+    }
     setSettingsState(elements.settingsAiState, "success", "Connected");
+    setConnectionIndicator("connected", "Connected");
+    return true;
   } catch (error) {
-    message.textContent = error.message;
-    message.classList.add("is-error");
+    state.gateway = {
+      ...(state.gateway || {}),
+      ai_connection_status: "check_settings",
+      ai_connection_message: error.message,
+    };
+    if (message) {
+      message.textContent = error.message;
+      message.classList.add("is-error");
+    }
     setSettingsState(elements.settingsAiState, "error", "Check settings");
+    setConnectionIndicator("check_settings", "Check settings");
+    return false;
   } finally {
     setBusy(button, false);
   }
@@ -1516,11 +1722,11 @@ function bindEvents() {
   document.querySelector("#test-ai").addEventListener("click", testGatewayConnection);
   document.querySelectorAll(".provider-radio").forEach((radio) => {
     radio.addEventListener("change", () => {
-      syncProviderOptions(radio.value);
+      captureProviderDraft(elements.settingsProvider.value);
+      const draft = providerDraft(radio.value);
       const preset = providerPreset(radio.value);
-      if (preset?.default_model && !elements.settingsModel.value.trim()) {
-        elements.settingsModel.value = preset.default_model;
-      }
+      if (preset?.model_required && !draft.model) draft.model = preset.default_model || "";
+      syncProviderOptions(radio.value);
     });
   });
   elements.settingsDialog.addEventListener("cancel", (event) => {

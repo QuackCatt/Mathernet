@@ -67,6 +67,9 @@ class GatewayConfig:
     mcp_tool_name: str = "search"
     mcp_headers: str = ""
     configured_at: str = ""
+    ai_connection_status: str = "unknown"
+    ai_connection_message: str = ""
+    ai_connection_checked_at: str = ""
 
     def __post_init__(self) -> None:
         self.provider = self.provider.strip().lower()
@@ -76,16 +79,23 @@ class GatewayConfig:
         self.base_url = self.base_url.strip()
         self.endpoint_path = self.endpoint_path.strip()
         self.auth_style = self.auth_style.strip()
+        self.ai_connection_status = self.ai_connection_status.strip().lower() or "unknown"
+        self.ai_connection_message = self.ai_connection_message.strip()
+        self.ai_connection_checked_at = self.ai_connection_checked_at.strip()
+        if self.ai_connection_status not in {"unknown", "connected", "check_settings"}:
+            self.ai_connection_status = "unknown"
         preset = PROVIDER_PRESETS.get(self.provider)
         if preset:
             self.api_format = self.api_format or preset.api_format
             self.base_url = self.base_url or preset.base_url
             self.endpoint_path = self.endpoint_path or preset.endpoint_path
             self.auth_style = self.auth_style or preset.auth_style
+            if preset.managed_model:
+                self.model = preset.default_model
 
     @property
     def ai_configured(self) -> bool:
-        if not self.provider or not self.api_key or not self.model:
+        if not self.provider or not self.api_key:
             return False
         try:
             self.resolved_provider()
@@ -132,6 +142,9 @@ class GatewayConfig:
             "configured_at": self.configured_at,
             "configured": self.completed,
             "ai_configured": self.ai_configured,
+            "ai_connection_status": self.ai_connection_status,
+            "ai_connection_message": self.ai_connection_message,
+            "ai_connection_checked_at": self.ai_connection_checked_at,
             "search_configured": self.search_configured,
             "api_key_hint": key_hint,
             "search_api_key_hint": search_hint,
@@ -275,10 +288,11 @@ class ProviderGateway:
             self.config.resolved_provider(),
             timeout_seconds=self.timeout_seconds,
         )
+        resolved = self.config.resolved_provider()
         response = adapter.complete(
             ProviderRequest(
-                model=self.config.model,
-                api_key=self.config.api_key,
+                model=resolved.model,
+                api_key=resolved.api_key,
                 system_prompt=system,
                 user_prompt=user,
                 json_schema=json_schema,

@@ -8,9 +8,9 @@ from typing import Any, Protocol
 from .agent import FormulaAgent, LearnResult
 from .config import Settings
 from .deep_dive_sessions import DeepDiveSessionStore, MAX_SESSION_MESSAGE_LENGTH, MAX_SESSION_REPLY_LENGTH
-from .errors import ConflictError, NotFoundError, ValidationError
+from .errors import ConflictError, NotFoundError, SynthesisError, ValidationError
 from .formula_introductions import FormulaIntroductionStore
-from .llm import OpenAIResponsesSynthesizer, RuleBasedSynthesizer
+from .llm import RuleBasedSynthesizer
 from .gateway import GatewayConfig, GatewayStore, ProviderGateway, SearchGateway
 from .map_sessions import MapSessionStore
 from .models import (
@@ -21,7 +21,7 @@ from .models import (
     VerificationStatus,
 )
 from .normalization import formula_key, normalize_text
-from .providers import provider_catalog
+from .providers import fetch_provider_models, provider_catalog
 from .repository import GraphRepository
 from .retrieval import provider_from_settings
 from .rules import (
@@ -113,10 +113,14 @@ class MathernetService:
                 value = getattr(current, field)
             values[field] = value
         provider = str(values.get("provider", "")).strip().lower()
+        provider_changed = provider != current.provider
         protocol_fields = {"api_format", "base_url", "endpoint_path", "auth_style"}
-        if provider and provider != current.provider and not protocol_fields.intersection(payload):
+        if provider_changed:
             for field in protocol_fields:
-                values[field] = ""
+                if field not in payload:
+                    values[field] = ""
+            if "model" not in payload:
+                values["model"] = ""
         search_engine = str(values.get("search_engine", "")).strip().lower()
         if search_engine and search_engine not in {"google", "bing", "yahoo", "baidu"}:
             raise ValidationError("unsupported search engine")
@@ -137,17 +141,56 @@ class MathernetService:
             mcp_tool_name=str(values.get("mcp_tool_name", current.mcp_tool_name)).strip() or "search",
             mcp_headers=str(values.get("mcp_headers", current.mcp_headers)).strip(),
             configured_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            ai_connection_status="unknown",
+            ai_connection_message="",
+            ai_connection_checked_at="",
         )
-        if config.provider and not config.model:
-            raise ValidationError("model is required when an AI provider is selected")
         if config.provider:
             config.resolved_provider()
         self.gateway_store.save(config)
         self._rebuild_agent(config)
         return self.gateway_config()
 
+    def list_provider_models(self, payload: dict[str, Any]) -> dict[str, Any]:
+        provider = str(payload.get("provider", "")).strip().lower()
+        current = self.gateway_store.load()
+        api_key = str(payload.get("api_key", "")).strip()
+        if not api_key and current.provider == provider:
+            api_key = current.api_key
+        models = fetch_provider_models(provider, api_key)
+        provider_catalog_item = next(
+            (item for item in provider_catalog() if item["id"] == provider),
+            None,
+        )
+        return {
+            "provider": provider,
+            "models": models,
+            "default_model": provider_catalog_item["default_model"] if provider_catalog_item else "",
+        }
+
     def test_gateway_ai(self) -> dict[str, Any]:
-        return ProviderGateway(self.gateway_store.load()).test_connection()
+        config = self.gateway_store.load()
+        checked_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        try:
+            result = ProviderGateway(config).test_connection()
+        except SynthesisError as error:
+            config.ai_connection_status = "check_settings"
+            config.ai_connection_message = str(error)
+            config.ai_connection_checked_at = checked_at
+            self.gateway_store.save(config)
+            self._rebuild_agent(config)
+            raise
+        config.ai_connection_status = "connected"
+        config.ai_connection_message = str(result.get("message", "connected"))
+        config.ai_connection_checked_at = checked_at
+        self.gateway_store.save(config)
+        self._rebuild_agent(config)
+        return {
+            **result,
+            "ai_connection_status": config.ai_connection_status,
+            "ai_connection_message": config.ai_connection_message,
+            "ai_connection_checked_at": config.ai_connection_checked_at,
+        }
 
     def test_gateway_search(self) -> dict[str, Any]:
         return SearchGateway(self.gateway_store.load()).test_connection()
@@ -751,7 +794,7 @@ def build_service(settings: Settings) -> MathernetService:
     config = gateway_store.load()
     if not config.completed:
         config = GatewayConfig(
-            provider="openai" if settings.openai_api_key else "",
+            provider="deepseek" if settings.openai_api_key else "",
             api_key=settings.openai_api_key,
             model=settings.openai_model,
             search_engine="",

@@ -56,6 +56,8 @@ def handle_api_request(
             return ApiResponse(200, service.gateway_config())
         if path == "/api/gateway" and method == "PATCH":
             return ApiResponse(200, service.save_gateway_config(body or {}))
+        if path == "/api/gateway/models" and method == "POST":
+            return ApiResponse(200, service.list_provider_models(body or {}))
         if path == "/api/gateway/mcp" and method == "PATCH":
             return ApiResponse(200, service.save_gateway_config(body or {}))
         if path == "/api/gateway/test-ai" and method == "POST":
@@ -296,6 +298,9 @@ def openapi_document() -> dict[str, Any]:
             "/api/gateway": {
                 "get": {"summary": "Read masked AI and search gateway settings"},
                 "patch": {"summary": "Save AI and search gateway settings"},
+            },
+            "/api/gateway/models": {
+                "post": {"summary": "List models exposed by the selected AI provider"}
             },
             "/api/gateway/mcp": {"patch": {"summary": "Save MCP search gateway settings"}},
             "/api/gateway/test-ai": {"post": {"summary": "Test the configured AI provider"}},

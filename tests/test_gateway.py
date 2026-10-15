@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from mathernet.api import handle_api_request
+from mathernet.errors import SynthesisError
 from mathernet.gateway import GatewayConfig, GatewayStore, ProviderGateway
 from mathernet.providers import ProviderResponse
 from mathernet.repository import GraphRepository
@@ -29,16 +30,15 @@ class GatewayTests(unittest.TestCase):
             "PATCH",
             "/api/gateway",
             {
-                "provider": "openai",
+                "provider": "deepseek",
                 "api_key": "sk-1234567890",
-                "model": "gpt-5-mini",
                 "search_engine": "google",
                 "search_api_key": "search-secret",
                 "search_engine_id": "engine-id",
             },
         )
         self.assertEqual(response.status, 200)
-        self.assertEqual(response.payload["provider"], "openai")
+        self.assertEqual(response.payload["provider"], "deepseek")
         self.assertNotIn("sk-1234567890", json.dumps(response.payload))
         self.assertNotIn("search-secret", json.dumps(response.payload))
         self.assertTrue(response.payload["api_key_hint"].startswith("sk-"))
@@ -49,9 +49,8 @@ class GatewayTests(unittest.TestCase):
     def test_blank_secret_keeps_existing_key(self):
         self.store.save(
             GatewayConfig(
-                provider="anthropic",
+                provider="deepseek",
                 api_key="secret-value",
-                model="claude-3-5-sonnet-latest",
                 search_engine="baidu",
             )
         )
@@ -59,14 +58,53 @@ class GatewayTests(unittest.TestCase):
             self.service,
             "PATCH",
             "/api/gateway",
-            {"provider": "anthropic", "api_key": "", "model": "claude-3-5-sonnet-latest", "search_engine": "baidu"},
+            {"provider": "deepseek", "api_key": "", "search_engine": "baidu"},
         )
         self.assertEqual(response.payload["api_key_hint"], "sec…ue")
         self.assertEqual(self.store.load().api_key, "secret-value")
 
+    def test_failed_connection_test_persists_check_settings(self):
+        response = handle_api_request(
+            self.service,
+            "PATCH",
+            "/api/gateway",
+            {"provider": "openrouter", "api_key": "bad-key", "model": "openai/gpt-4o-mini"},
+        )
+        self.assertEqual(response.payload["ai_connection_status"], "unknown")
+
+        with patch(
+            "mathernet.services.ProviderGateway.test_connection",
+            side_effect=SynthesisError("AI provider request failed: invalid API key"),
+        ):
+            failed = handle_api_request(self.service, "POST", "/api/gateway/test-ai")
+
+        self.assertEqual(failed.status, 502)
+        self.assertEqual(self.store.load().ai_connection_status, "check_settings")
+        reread = handle_api_request(self.service, "GET", "/api/gateway")
+        self.assertEqual(reread.payload["ai_connection_status"], "check_settings")
+        self.assertEqual(reread.payload["ai_configured"], True)
+
+    def test_successful_connection_test_persists_connected(self):
+        handle_api_request(
+            self.service,
+            "PATCH",
+            "/api/gateway",
+            {"provider": "deepseek", "api_key": "good-key"},
+        )
+        with patch(
+            "mathernet.services.ProviderGateway.test_connection",
+            return_value={"ok": True, "message": "connected"},
+        ):
+            response = handle_api_request(self.service, "POST", "/api/gateway/test-ai")
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.payload["ai_connection_status"], "connected")
+        self.assertEqual(self.store.load().ai_connection_status, "connected")
+
     def test_openapi_exposes_gateway_routes(self):
         response = handle_api_request(self.service, "GET", "/api/openapi.json")
         self.assertIn("/api/gateway", response.payload["paths"])
+        self.assertIn("/api/gateway/models", response.payload["paths"])
         self.assertIn("/api/gateway/mcp", response.payload["paths"])
 
     def test_mcp_route_accepts_command_http_url_and_headers_json(self):
@@ -108,7 +146,7 @@ class GatewayTests(unittest.TestCase):
                 )
 
         gateway = ProviderGateway(
-            GatewayConfig(provider="openai", api_key="test-key", model="test-model")
+            GatewayConfig(provider="deepseek", api_key="test-key")
         )
         with patch("mathernet.gateway.adapter_for_config", return_value=FakeAdapter()):
             gateway.deep_dive({"name": "Test formula"}, [])
@@ -132,7 +170,7 @@ class GatewayTests(unittest.TestCase):
                 )
 
         gateway = ProviderGateway(
-            GatewayConfig(provider="openai", api_key="test-key", model="test-model")
+            GatewayConfig(provider="openrouter", api_key="test-key", model="openai/gpt-4o-mini")
         )
         with patch("mathernet.gateway.adapter_for_config", return_value=FakeAdapter()):
             introduction = gateway.introduce({"name": "Test formula"}, [])

@@ -2,15 +2,17 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from mathernet.api import handle_api_request
+from mathernet.errors import SynthesisError
 from mathernet.gateway import GatewayConfig, GatewayStore
 from mathernet.providers import (
-    AnthropicMessagesAdapter,
     OpenAIChatAdapter,
-    OpenAIResponsesAdapter,
     ProviderRequest,
     adapter_for_config,
+    fetch_provider_models,
+    provider_catalog,
     resolve_provider_config,
 )
 from mathernet.repository import GraphRepository
@@ -35,46 +37,74 @@ class RecordingTransport:
         }
 
 
+class FakeResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def read(self):
+        return json.dumps(self.payload).encode("utf-8")
+
+
+class FlakyTransport(RecordingTransport):
+    def __init__(self):
+        super().__init__()
+        self.attempts = 0
+
+    def post(self, endpoint, headers, payload, timeout):
+        self.attempts += 1
+        if self.attempts == 1:
+            raise SynthesisError("Upstream error from Nvidia: Service temporarily overloaded")
+        return super().post(endpoint, headers, payload, timeout)
+
+
 class ProviderAdapterTests(unittest.TestCase):
-    def test_openai_chat_adapter_serves_all_compatible_presets(self):
-        for provider in ("deepseek", "qwen", "openrouter"):
-            with self.subTest(provider=provider):
-                transport = RecordingTransport()
-                config = resolve_provider_config(
-                    provider=provider,
-                    api_key="secret",
-                    model=f"{provider}-model",
-                )
-                adapter = adapter_for_config(config, transport=transport)
-                self.assertIsInstance(adapter, OpenAIChatAdapter)
+    def test_only_deepseek_and_openrouter_are_exposed(self):
+        catalog = provider_catalog()
+        self.assertEqual([item["id"] for item in catalog], ["deepseek", "openrouter"])
+        by_id = {item["id"]: item for item in catalog}
+        self.assertTrue(by_id["deepseek"]["managed_model"])
+        self.assertFalse(by_id["deepseek"]["model_required"])
+        self.assertFalse(by_id["openrouter"]["managed_model"])
+        self.assertTrue(by_id["openrouter"]["model_required"])
 
-                response = adapter.complete(
-                    ProviderRequest(
-                        model=config.model,
-                        api_key=config.api_key,
-                        system_prompt="system",
-                        user_prompt="user",
-                    )
-                )
+    def test_deepseek_uses_managed_model_and_openai_chat_protocol(self):
+        transport = RecordingTransport()
+        config = resolve_provider_config(provider="deepseek", api_key="secret", model="")
+        adapter = adapter_for_config(config, transport=transport)
+        self.assertIsInstance(adapter, OpenAIChatAdapter)
+        self.assertEqual(config.model, "deepseek-chat")
 
-                call = transport.calls[0]
-                self.assertEqual(response.text, "connected")
-                self.assertEqual(call["headers"]["Authorization"], "Bearer secret")
-                self.assertEqual(call["headers"]["User-Agent"], "Mathernet/1.0")
-                self.assertEqual(call["payload"]["messages"][0]["role"], "system")
-                self.assertEqual(call["payload"]["messages"][1]["content"], "user")
-                self.assertIn("/chat/completions", call["endpoint"])
+        response = adapter.complete(
+            ProviderRequest(
+                model=config.model,
+                api_key=config.api_key,
+                system_prompt="system",
+                user_prompt="user",
+                json_schema={"type": "object"},
+            )
+        )
 
-    def test_anthropic_adapter_uses_messages_protocol_and_x_api_key(self):
+        call = transport.calls[0]
+        self.assertEqual(response.text, "connected")
+        self.assertEqual(call["endpoint"], "https://api.deepseek.com/v1/chat/completions")
+        self.assertEqual(call["headers"]["Authorization"], "Bearer secret")
+        self.assertEqual(call["payload"]["model"], "deepseek-chat")
+        self.assertEqual(call["payload"]["response_format"], {"type": "json_object"})
+
+    def test_openrouter_requires_a_route_and_uses_router_headers(self):
         transport = RecordingTransport()
         config = resolve_provider_config(
-            provider="anthropic",
-            api_key="anthropic-secret",
-            model="claude-model",
+            provider="openrouter",
+            api_key="router-secret",
+            model="openai/gpt-4o-mini",
         )
         adapter = adapter_for_config(config, transport=transport)
-        self.assertIsInstance(adapter, AnthropicMessagesAdapter)
-
         adapter.complete(
             ProviderRequest(
                 model=config.model,
@@ -86,99 +116,84 @@ class ProviderAdapterTests(unittest.TestCase):
         )
 
         call = transport.calls[0]
-        self.assertEqual(call["headers"]["x-api-key"], "anthropic-secret")
-        self.assertNotIn("Authorization", call["headers"])
-        self.assertEqual(call["payload"]["system"], "system")
-        self.assertEqual(call["payload"]["tool_choice"]["name"], "save_formula_card")
+        self.assertEqual(call["endpoint"], "https://openrouter.ai/api/v1/chat/completions")
+        self.assertEqual(call["headers"]["Authorization"], "Bearer router-secret")
+        self.assertEqual(call["headers"]["HTTP-Referer"], "http://127.0.0.1")
+        self.assertEqual(call["headers"]["X-Title"], "Mathernet")
+        self.assertEqual(call["payload"]["model"], "openai/gpt-4o-mini")
+        self.assertNotIn("response_format", call["payload"])
+        self.assertEqual(call["payload"]["reasoning"], {"effort": "medium"})
+        self.assertEqual(call["payload"]["max_tokens"], 4096)
 
-    def test_openai_responses_adapter_builds_structured_output(self):
-        transport = RecordingTransport()
+    def test_openrouter_model_is_required(self):
+        with self.assertRaisesRegex(Exception, "model is required"):
+            resolve_provider_config(provider="openrouter", api_key="secret", model="")
+
+    def test_retries_transient_provider_overload(self):
+        transport = FlakyTransport()
         config = resolve_provider_config(
-            provider="openai",
-            api_key="openai-secret",
-            model="gpt-model",
+            provider="openrouter",
+            api_key="secret",
+            model="nvidia/nemotron-3-ultra-550b-a55b:free",
         )
-        adapter = adapter_for_config(config, transport=transport)
-        self.assertIsInstance(adapter, OpenAIResponsesAdapter)
-
-        adapter.complete(
+        adapter = adapter_for_config(
+            config,
+            transport=transport,
+            retry_delay_seconds=0,
+        )
+        response = adapter.complete(
             ProviderRequest(
                 model=config.model,
                 api_key=config.api_key,
                 system_prompt="system",
                 user_prompt="user",
-                json_schema={"type": "object", "properties": {}},
             )
         )
 
-        call = transport.calls[0]
-        self.assertEqual(call["payload"]["instructions"], "system")
-        self.assertEqual(
-            call["payload"]["text"]["format"]["type"],
-            "json_schema",
-        )
+        self.assertEqual(response.text, "connected")
+        self.assertEqual(transport.attempts, 2)
 
-    def test_new_compatible_provider_needs_configuration_not_gateway_code(self):
-        transport = RecordingTransport()
-        config = resolve_provider_config(
-            provider="future-provider",
-            api_key="secret",
-            model="future-model",
-            api_format="openai_chat",
-            base_url="https://ai.example.com",
-            endpoint_path="/api/chat/completions",
-            auth_style="bearer",
-        )
-        adapter = adapter_for_config(config, transport=transport)
-        self.assertIsInstance(adapter, OpenAIChatAdapter)
-        adapter.complete(
-            ProviderRequest(
-                model=config.model,
-                api_key=config.api_key,
-                system_prompt="system",
-            )
-        )
+    def test_fetches_openrouter_model_routes(self):
+        with patch(
+            "mathernet.providers.open_url",
+            return_value=FakeResponse({
+                "data": [
+                    {"id": "z-ai/glm-5.2", "name": "GLM 5.2"},
+                    {"id": "openai/gpt-4o-mini", "name": "GPT-4o mini"},
+                ]
+            }),
+        ) as open_url:
+            models = fetch_provider_models("openrouter", "secret")
+
+        request = open_url.call_args.args[0]
+        self.assertEqual(request.full_url, "https://openrouter.ai/api/v1/models")
+        self.assertEqual(request.get_header("Authorization"), "Bearer secret")
         self.assertEqual(
-            transport.calls[0]["endpoint"],
-            "https://ai.example.com/api/chat/completions",
+            [model["id"] for model in models],
+            ["openai/gpt-4o-mini", "z-ai/glm-5.2"],
         )
 
 
 class ProviderConfigCompatibilityTests(unittest.TestCase):
-    def test_legacy_gateway_config_is_mapped_to_a_protocol(self):
+    def test_legacy_gateway_config_is_mapped_to_deepseek_defaults(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "gateway.json"
             path.write_text(json.dumps({
                 "provider": "deepseek",
                 "api_key": "secret",
-                "model": "deepseek-chat",
+                "model": "",
             }))
             config = GatewayStore(path).load()
 
         self.assertEqual(config.api_format, "openai_chat")
         self.assertEqual(config.auth_style, "bearer")
-        self.assertEqual(config.endpoint_path, "/v1/chat/completions")
+        self.assertEqual(config.model, "deepseek-chat")
         self.assertTrue(config.ai_configured)
 
-    def test_openrouter_preset_uses_its_api_prefix(self):
-        config = resolve_provider_config(
-            provider="openrouter",
-            api_key="secret",
-            model="openai/gpt-4o-mini",
-        )
-        self.assertEqual(
-            config.endpoint,
-            "https://openrouter.ai/api/v1/chat/completions",
-        )
-
-    def test_switching_provider_replaces_protocol_preset(self):
+    def test_switching_provider_replaces_the_provider_preset(self):
         with tempfile.TemporaryDirectory() as directory:
             store = GatewayStore(Path(directory) / "gateway.json")
-            store.save(GatewayConfig(
-                provider="deepseek",
-                api_key="deepseek-key",
-                model="deepseek-chat",
-            ))
+            store.save(GatewayConfig(provider="deepseek", api_key="deepseek-key"))
             service = MathernetService(
                 GraphRepository(Path(directory) / "graph.json"),
                 gateway_store=store,
@@ -188,17 +203,17 @@ class ProviderConfigCompatibilityTests(unittest.TestCase):
                 "PATCH",
                 "/api/gateway",
                 {
-                    "provider": "openai",
-                    "api_key": "openai-key",
-                    "model": "gpt-5-mini",
+                    "provider": "openrouter",
+                    "api_key": "router-key",
+                    "model": "openai/gpt-4o-mini",
                 },
             )
 
             self.assertEqual(response.status, 200)
             config = store.load()
-            self.assertEqual(config.provider, "openai")
-            self.assertEqual(config.api_format, "openai_responses")
-            self.assertEqual(config.endpoint_path, "/v1/responses")
+            self.assertEqual(config.provider, "openrouter")
+            self.assertEqual(config.endpoint_path, "/api/v1/chat/completions")
+            self.assertEqual(config.model, "openai/gpt-4o-mini")
 
 
 if __name__ == "__main__":

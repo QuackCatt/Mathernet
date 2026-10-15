@@ -71,6 +71,41 @@ class LlmParsingTests(unittest.TestCase):
         })
         self.assertIn('"name": "B"', tool_text)
 
+    def test_extracts_openrouter_reasoning_fields_when_final_content_is_empty(self):
+        text = _extract_provider_text({
+            "choices": [{
+                "finish_reason": "stop",
+                "message": {
+                    "content": "",
+                    "reasoning": "",
+                    "reasoning_details": [
+                        {"type": "reasoning.text", "text": '{"name":"A","ai_module":'},
+                        {"type": "reasoning.text", "text": '{"summary":"S","explanation":"E"}}'},
+                    ],
+                },
+            }]
+        })
+        self.assertIn('"ai_module"', text)
+
+        reasoning_content = _extract_provider_text({
+            "choices": [{
+                "message": {
+                    "content": None,
+                    "reasoning_content": '{"name":"B","ai_module":{"summary":"S","explanation":"E"}}',
+                }
+            }]
+        })
+        self.assertIn('"name":"B"', reasoning_content)
+
+    def test_reports_provider_errors_and_empty_finish_reason(self):
+        with self.assertRaises(SynthesisError) as raised:
+            _extract_provider_text({"error": {"message": "route is temporarily unavailable"}})
+        self.assertIn("route is temporarily unavailable", str(raised.exception))
+
+        with self.assertRaises(SynthesisError) as raised:
+            _extract_provider_text({"choices": [{"finish_reason": "length", "message": {"content": ""}}]})
+        self.assertIn("finish_reason=length", str(raised.exception))
+
     def test_error_lists_received_top_level_fields(self):
         with self.assertRaises(SynthesisError) as raised:
             parse_synthesis_result(json.dumps({"answer": "hello", "usage": {}}))

@@ -148,6 +148,15 @@
       </form>
 
       <div class="header-actions">
+        <div
+          class="ai-connection-indicator"
+          id="ai-connection-indicator"
+          data-state="unknown"
+          title="AI connection: checking"
+        >
+          <span class="ai-connection-dot" aria-hidden="true"></span>
+          <span class="sr-only" id="ai-connection-label">AI connection: checking</span>
+        </div>
         <button
           class="icon-button panel-toggle is-active"
           id="toggle-left-panel"
@@ -438,64 +447,32 @@
             <p class="provider-selector-label">Provider</p>
             <select id="settings-provider" class="provider-select" name="provider">
               <option value="">Select a provider</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="openai">OpenAI</option>
               <option value="deepseek">DeepSeek</option>
-              <option value="qwen">Qwen</option>
               <option value="openrouter">OpenRouter</option>
             </select>
             <div class="provider-options">
               <label class="provider-option">
-                <input class="provider-radio" type="radio" name="provider-option" value="anthropic">
-                <span class="provider-mark">A</span>
-                <span class="provider-name">Anthropic</span>
-                <svg class="provider-check" aria-hidden="true"><use href="#icon-check"></use></svg>
-              </label>
-              <label class="provider-option">
-                <input class="provider-radio" type="radio" name="provider-option" value="openai">
-                <span class="provider-mark">O</span>
-                <span class="provider-name">OpenAI</span>
-                <svg class="provider-check" aria-hidden="true"><use href="#icon-check"></use></svg>
-              </label>
-              <label class="provider-option">
                 <input class="provider-radio" type="radio" name="provider-option" value="deepseek">
                 <span class="provider-mark">D</span>
-                <span class="provider-name">DeepSeek</span>
-                <svg class="provider-check" aria-hidden="true"><use href="#icon-check"></use></svg>
-              </label>
-              <label class="provider-option">
-                <input class="provider-radio" type="radio" name="provider-option" value="qwen">
-                <span class="provider-mark">Q</span>
-                <span class="provider-name">Qwen</span>
+                <span class="provider-option-copy">
+                  <span class="provider-name">DeepSeek</span>
+                  <span class="provider-detail">Official API</span>
+                </span>
                 <svg class="provider-check" aria-hidden="true"><use href="#icon-check"></use></svg>
               </label>
               <label class="provider-option">
                 <input class="provider-radio" type="radio" name="provider-option" value="openrouter">
                 <span class="provider-mark provider-mark-wide">OR</span>
-                <span class="provider-name">OpenRouter</span>
+                <span class="provider-option-copy">
+                  <span class="provider-name">OpenRouter</span>
+                  <span class="provider-detail">Model routing</span>
+                </span>
                 <svg class="provider-check" aria-hidden="true"><use href="#icon-check"></use></svg>
               </label>
             </div>
           </fieldset>
 
-          <section class="provider-form" aria-labelledby="provider-form-title">
-            <div class="provider-form-heading">
-              <div>
-                <p class="section-kicker">Access credentials</p>
-                <h3 id="provider-form-title">Connect your account</h3>
-              </div>
-            </div>
-            <div class="field">
-              <label for="settings-api-key">API key</label>
-              <input id="settings-api-key" name="api_key" type="password" autocomplete="off" placeholder="Paste a new key" spellcheck="false">
-              <p class="field-hint" id="settings-key-hint">Stored locally and never shown after saving.</p>
-            </div>
-            <div class="field">
-              <label for="settings-model">Model</label>
-              <input id="settings-model" name="model" type="text" autocomplete="off" placeholder="Choose a model after selecting a provider">
-            </div>
-            <p class="settings-status" id="settings-ai-message" role="status"></p>
-          </section>
+          <section class="provider-form" id="provider-form" aria-live="polite"></section>
         </div>
 
         <p class="settings-error" id="settings-error" role="alert"></p>
