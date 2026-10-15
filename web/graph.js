@@ -76,7 +76,7 @@
     render(graph, { onSelect, selectedId } = {}) {
       this.cancelAnimation();
       this.onSelect = onSelect || null;
-      this.selectedId = selectedId || graph?.root_id || null;
+      this.selectedId = selectedId || null;
       if (!graph || !graph.nodes.length) {
         this.clear();
         return;
@@ -111,7 +111,7 @@
       this.edgeLayer.replaceChildren();
       this.nodeLayer.replaceChildren();
       this.empty.hidden = false;
-      this.description.textContent = "Select a formula to build its local dependency map.";
+      this.description.textContent = "This mind map has no formula cards yet.";
     }
 
     initializePositions(previousPositions) {
@@ -450,7 +450,8 @@
       const root = this.nodes.find((node) => node.id === this.selectedId);
       this.description.textContent =
         `${this.nodes.length} ${formulaLabel} and ${this.links.length} ${relationLabel} shown ` +
-        `around ${root?.name || "the selected formula"}. Drag nodes, scroll to zoom, or drag the canvas to pan.`;
+        `in this mind map${root ? ` with ${root.name} selected` : ""}. ` +
+        "Drag nodes, scroll to zoom, or drag the canvas to pan.";
     }
 
     fit() {

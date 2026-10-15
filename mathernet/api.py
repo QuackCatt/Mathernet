@@ -80,9 +80,51 @@ def handle_api_request(
         if path == "/api/export" and method == "GET":
             return ApiResponse(200, service.export_graph())
 
+        if path == "/api/map-sessions" and method == "GET":
+            return ApiResponse(200, service.list_map_sessions())
+        if path == "/api/map-sessions" and method == "POST":
+            payload = _require_body(body, {"name"}, set())
+            return ApiResponse(201, service.create_map_session(_required_string(payload, "name")))
+
+        map_session_match = re.fullmatch(r"/api/map-sessions/([^/]+)", path)
+        if map_session_match:
+            session_id = map_session_match.group(1)
+            if method == "GET":
+                return ApiResponse(200, service.get_map_session(session_id))
+            if method == "PATCH":
+                payload = _require_body(body, set(), {"name", "pinned"})
+                name = _optional_string(payload, "name")
+                pinned = payload.get("pinned")
+                if pinned is not None and not isinstance(pinned, bool):
+                    raise ValidationError("pinned must be a boolean")
+                return ApiResponse(
+                    200,
+                    service.update_map_session(session_id, name=name, pinned=pinned),
+                )
+            if method == "DELETE":
+                return ApiResponse(200, service.delete_map_session(session_id))
+
+        map_formula_match = re.fullmatch(r"/api/map-sessions/([^/]+)/formulas", path)
+        if map_formula_match and method == "POST":
+            payload = _require_body(body, {"formula_id"}, set())
+            return ApiResponse(
+                200,
+                service.add_formula_to_map_session(
+                    map_formula_match.group(1),
+                    _required_string(payload, "formula_id"),
+                ),
+            )
+
+        map_graph_match = re.fullmatch(r"/api/map-sessions/([^/]+)/graph", path)
+        if map_graph_match and method == "GET":
+            return ApiResponse(200, service.get_map_graph(map_graph_match.group(1)))
+
         formula_match = re.fullmatch(r"/api/formulas/([^/]+)", path)
-        if formula_match and method == "GET":
-            return ApiResponse(200, service.get_formula_card(formula_match.group(1)))
+        if formula_match:
+            if method == "GET":
+                return ApiResponse(200, service.get_formula_card(formula_match.group(1)))
+            if method == "DELETE":
+                return ApiResponse(200, service.delete_formula(formula_match.group(1)))
 
         graph_match = re.fullmatch(r"/api/formulas/([^/]+)/graph", path)
         if graph_match and method == "GET":
@@ -260,7 +302,25 @@ def openapi_document() -> dict[str, Any]:
             "/api/gateway/test-search": {"post": {"summary": "Test the configured search connection"}},
             "/api/formulas": {"get": {"summary": "Search and page formula summaries"}},
             "/api/learn": {"post": {"summary": "Create or reuse a source-backed formula card"}},
-            "/api/formulas/{formula_id}": {"get": {"summary": "Read a complete formula card"}},
+            "/api/map-sessions": {
+                "get": {"summary": "List mind-map sessions"},
+                "post": {"summary": "Create a mind-map session"},
+            },
+            "/api/map-sessions/{session_id}": {
+                "get": {"summary": "Read one mind-map session"},
+                "patch": {"summary": "Rename or pin a mind-map session"},
+                "delete": {"summary": "Delete a mind-map session"},
+            },
+            "/api/map-sessions/{session_id}/formulas": {
+                "post": {"summary": "Add a formula card to a mind-map session"}
+            },
+            "/api/map-sessions/{session_id}/graph": {
+                "get": {"summary": "Read the complete active mind-map graph"}
+            },
+            "/api/formulas/{formula_id}": {
+                "get": {"summary": "Read a complete formula card"},
+                "delete": {"summary": "Delete a formula card globally"},
+            },
             "/api/formulas/{formula_id}/graph": {"get": {"summary": "Read a bounded graph neighbourhood"}},
             "/api/formulas/{formula_id}/introduction": {
                 "post": {"summary": "Generate or reuse a concise formula introduction"}
@@ -364,6 +424,9 @@ class MathernetRequestHandler(BaseHTTPRequestHandler):
     def do_PATCH(self) -> None:
         self._dispatch_with_body()
 
+    def do_DELETE(self) -> None:
+        self._dispatch_with_body()
+
     def do_OPTIONS(self) -> None:
         self._dispatch(None)
 
@@ -395,7 +458,7 @@ class MathernetRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, If-Match")
         for name, value in response.headers.items():
             self.send_header(name, value)

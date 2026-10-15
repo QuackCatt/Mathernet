@@ -109,6 +109,26 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(loaded.user_module.notes, "personal reflection")
         self.assertEqual(loaded.status, FormulaStatus.LEARNING)
 
+    def test_delete_formula_removes_incident_edges(self):
+        first = self.add_formula("formula_a", "First", "first")
+        second = self.add_formula("formula_b", "Second", "second")
+        self.repository.add_edge(
+            edge_id="edge_delete",
+            source_id=first.id,
+            target_id=second.id,
+            relation=EdgeRelation.PREREQUISITE,
+            rationale="supported rationale",
+            sources=["src_one"],
+        )
+
+        self.repository.delete_formula(first.id)
+        self.repository.save()
+
+        restarted = GraphRepository(self.path)
+        self.assertIsNone(restarted.find_formula("First"))
+        self.assertEqual([edge.id for edge in restarted.document.edges], [])
+        self.assertIsNotNone(restarted.get_source("src_one"))
+
 
 if __name__ == "__main__":
     unittest.main()

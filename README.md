@@ -49,7 +49,7 @@ scripts/mathernet demo
 scripts/mathernet serve
 ```
 
-The workspace provides formula search and status filters, a keyboard-accessible dependency graph, source traceability, personal notes, study status controls, and explicit confirmation for AI-suggested dependencies. It uses a three-column desktop library, graph, and detail layout. Search, selection, graph depth, and detail tab are kept in the URL for reloadable study sessions.
+The workspace provides multiple named mind-map sessions, a formula library grouped by mathematical topic, a keyboard-accessible dependency graph, source traceability, personal notes, study status controls, and explicit confirmation for AI-suggested dependencies. The desktop layout supports independent left/right panel collapsing; selecting a formula reopens the detail panel automatically. Map selection, formula selection, and detail tab are kept in the URL for reloadable study sessions.
 
 Formula expressions use the stored LaTeX source and locally vendored KaTeX rendering throughout the graph and formula card. The graph behaves like a free-form knowledge canvas: nodes settle through force-directed motion, relationships follow organic curves, and the view supports node dragging, neighbour highlighting, canvas panning, wheel zoom, and keyboard selection.
 

@@ -12,6 +12,7 @@ from .errors import ConflictError, NotFoundError, ValidationError
 from .formula_introductions import FormulaIntroductionStore
 from .llm import OpenAIResponsesSynthesizer, RuleBasedSynthesizer
 from .gateway import GatewayConfig, GatewayStore, ProviderGateway, SearchGateway
+from .map_sessions import MapSessionStore
 from .models import (
     DependencyEdge,
     EdgeRelation,
@@ -65,6 +66,7 @@ class MathernetService:
         ai_gateway: DeepDiveGateway | None = None,
         deep_dive_sessions: DeepDiveSessionStore | None = None,
         formula_introductions: FormulaIntroductionStore | None = None,
+        map_sessions: MapSessionStore | None = None,
     ):
         self.repository = repository
         self.agent = agent
@@ -72,6 +74,7 @@ class MathernetService:
         self.ai_gateway = ai_gateway
         self.deep_dive_sessions = deep_dive_sessions or DeepDiveSessionStore()
         self.formula_introductions = formula_introductions or FormulaIntroductionStore()
+        self.map_sessions = map_sessions or MapSessionStore()
 
     def gateway_config(self) -> dict[str, Any]:
         config = self.gateway_store.load()
@@ -407,6 +410,90 @@ class MathernetService:
             "revision": self.revision,
         }
 
+    def list_map_sessions(self) -> dict[str, Any]:
+        if not self.map_sessions.list():
+            self.map_sessions.create(
+                name="Main map",
+                formula_ids=[node.id for node in self.repository.list_formulas()],
+            )
+        return {
+            "sessions": [
+                self._map_session_summary(session)
+                for session in self.map_sessions.list()
+            ],
+            "revision": self.revision,
+        }
+
+    def create_map_session(self, name: str) -> dict[str, Any]:
+        session = self.map_sessions.create(name=name)
+        return self._map_session(session)
+
+    def get_map_session(self, session_id: str) -> dict[str, Any]:
+        return self._map_session(self.map_sessions.get(session_id))
+
+    def update_map_session(
+        self,
+        session_id: str,
+        *,
+        name: str | None = None,
+        pinned: bool | None = None,
+    ) -> dict[str, Any]:
+        return self._map_session(
+            self.map_sessions.update(session_id, name=name, pinned=pinned)
+        )
+
+    def delete_map_session(self, session_id: str) -> dict[str, Any]:
+        self.map_sessions.get(session_id)
+        self.map_sessions.delete(session_id)
+        return {"deleted": True, "session_id": session_id}
+
+    def add_formula_to_map_session(
+        self,
+        session_id: str,
+        formula_ref: str,
+    ) -> dict[str, Any]:
+        node = self.resolve_formula(formula_ref)
+        session, added = self.map_sessions.add_formula(session_id, node.id)
+        return {**self._map_session(session), "added": added}
+
+    def get_map_graph(self, session_id: str) -> dict[str, Any]:
+        session = self.map_sessions.get(session_id)
+        node_ids = [
+            formula_id for formula_id in session["formula_ids"]
+            if any(node.id == formula_id for node in self.repository.document.nodes)
+        ]
+        nodes = [
+            self._formula_summary(self.repository.get_formula(formula_id))
+            for formula_id in node_ids
+        ]
+        node_id_set = set(node_ids)
+        edges = [
+            self._edge_payload(edge)
+            for edge in self.repository.document.edges
+            if edge.verification_status in ACTIVE_EDGE_STATUSES
+            and edge.source_id in node_id_set
+            and edge.target_id in node_id_set
+        ]
+        return {
+            "session_id": session_id,
+            "root_id": node_ids[0] if node_ids else None,
+            "nodes": nodes,
+            "edges": edges,
+            "revision": self.revision,
+        }
+
+    def delete_formula(self, formula_ref: str) -> dict[str, Any]:
+        node = self.resolve_formula(formula_ref)
+        removed_from = self.map_sessions.remove_formula(node.id)
+        self.repository.delete_formula(node.id)
+        self.repository.save()
+        return {
+            "deleted": True,
+            "formula_id": node.id,
+            "removed_from_maps": removed_from,
+            "revision": self.revision,
+        }
+
     def list_deep_dive_sessions(self, formula_ref: str) -> list[dict[str, Any]]:
         node = self.resolve_formula(formula_ref)
         return self.deep_dive_sessions.list(node.id)
@@ -489,6 +576,30 @@ class MathernetService:
             "status": node.status.value,
             "source_count": len(node.sources),
             "updated_at": node.updated_at,
+        }
+
+    def _map_session_summary(self, session: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": session["id"],
+            "name": session["name"],
+            "pinned": bool(session["pinned"]),
+            "formula_count": len(session["formula_ids"]),
+            "created_at": session["created_at"],
+            "updated_at": session["updated_at"],
+        }
+
+    def _map_session(self, session: dict[str, Any]) -> dict[str, Any]:
+        formula_ids = set(session["formula_ids"])
+        formulas = [
+            self._formula_summary(node)
+            for node in self.repository.list_formulas()
+            if node.id in formula_ids
+        ]
+        return {
+            **self._map_session_summary(session),
+            "formula_ids": list(session["formula_ids"]),
+            "formulas": formulas,
+            "revision": self.revision,
         }
 
     def _formula_card(self, node: FormulaNode) -> dict[str, Any]:
@@ -667,5 +778,8 @@ def build_service(settings: Settings) -> MathernetService:
         ),
         formula_introductions=FormulaIntroductionStore(
             settings.search_cache_path.parent / "formula_introductions.json"
+        ),
+        map_sessions=MapSessionStore(
+            settings.search_cache_path.parent / "map_sessions.json"
         ),
     )

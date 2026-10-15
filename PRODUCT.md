@@ -15,6 +15,7 @@ University mathematics learners who want to understand formulas as connected ide
 ## Jobs
 
 - Open an existing formula or learn a new one through one unified search.
+- Organize formulas into independently named, pinnable, and deletable mind-map sessions.
 - See which formulas support or depend on the selected formula.
 - Read AI-generated formula explanations without confusing generated content with personal understanding.
 - Continue formula exploration in preserved deep-dive sessions, start a fresh generated session, or delete a saved session.
@@ -43,6 +44,7 @@ University mathematics learners who want to understand formulas as connected ide
 - The first Web surface is the working application, not a marketing page.
 - Formula expressions are rendered from stored LaTeX with KaTeX; ASCII display values are compatibility fallbacks only.
 - The dependency graph is an interactive force-directed canvas with dragging, panning, zooming, neighbour highlighting, and keyboard-selectable nodes.
+- Each mind-map session renders its complete formula set and the dependency edges whose endpoints both belong to that session.
 
 ## Accessibility
 
@@ -58,6 +60,7 @@ University mathematics learners who want to understand formulas as connected ide
 - Simple introduction: a generated 100-150 word definition explaining what a formula means, how it is used, and why it matters.
 - User Module: learner-owned notes and study status.
 - Deep-dive session: one generated opening article plus its preserved follow-up conversation for one formula.
+- Mind-map session: a named formula workspace with its own graph composition and navigation history.
 - Dependency edge: a directed, source-backed relation between formulas.
 - Accepted edge: a dependency confirmed or edited by the learner.
 
@@ -67,3 +70,4 @@ University mathematics learners who want to understand formulas as connected ide
 - No exam or homework answers are produced.
 - No interface action may silently accept an AI-suggested dependency.
 - Personal notes and local graph data remain outside version control.
+- Deleting a formula card is global: it removes the card and its incident relationships from every mind-map session while retaining shared source records.

@@ -141,6 +141,19 @@ class GraphRepository:
         node.updated_at = now
         return node
 
+    def delete_formula(self, formula_id: str) -> FormulaNode:
+        node = self.get_formula(formula_id)
+        self.document.edges = [
+            edge
+            for edge in self.document.edges
+            if edge.source_id != formula_id and edge.target_id != formula_id
+        ]
+        self.document.nodes = [
+            item for item in self.document.nodes if item.id != formula_id
+        ]
+        self._validate_references()
+        return node
+
     def add_edge(
         self,
         *,

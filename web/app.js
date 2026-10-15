@@ -1,13 +1,17 @@
 const state = {
+  mapSessions: [],
+  activeMapSession: null,
+  activeMapSessionId: null,
+  leftView: "sessions",
+  leftCollapsed: false,
+  rightCollapsed: false,
+  sessionMenuId: null,
+  renamingSessionId: null,
   formulas: [],
-  statusCounts: { all: 0, learning: 0, reviewed: 0 },
   selectedId: null,
   selectedCard: null,
   graph: null,
-  health: null,
   query: "",
-  status: "",
-  depth: 1,
   tab: "overview",
   notesDirty: false,
   pendingRejectEdgeId: null,
@@ -31,17 +35,25 @@ const state = {
 };
 
 const elements = {
-  connection: document.querySelector("#connection-state"),
-  connectionLabel: document.querySelector("#connection-label"),
   globalSearch: document.querySelector("#global-search"),
   globalQuery: document.querySelector("#global-query"),
   globalSubmit: document.querySelector("#global-submit"),
+  workspace: document.querySelector("#workspace"),
+  leftTrack: document.querySelector("#left-track"),
+  sessionList: document.querySelector("#session-list"),
+  sessionCreate: document.querySelector("#session-create"),
+  sessionName: document.querySelector("#session-name"),
+  newMapSession: document.querySelector("#new-map-session"),
+  backToSessions: document.querySelector("#back-to-sessions"),
+  activeMapLabel: document.querySelector("#active-map-label"),
   libraryQuery: document.querySelector("#library-query"),
   formulaList: document.querySelector("#formula-list"),
+  graphTitle: document.querySelector("#graph-title"),
   graphEmpty: document.querySelector("#graph-empty"),
   graphDescription: document.querySelector("#graph-description"),
   inspectorTitle: document.querySelector("#inspector-title"),
   inspectorStatus: document.querySelector("#inspector-status"),
+  deleteFormula: document.querySelector("#delete-formula"),
   overviewEmpty: document.querySelector("#overview-empty"),
   overviewContent: document.querySelector("#overview-content"),
   learningEmpty: document.querySelector("#learning-empty"),
@@ -62,6 +74,8 @@ const elements = {
   confirmReject: document.querySelector("#confirm-reject"),
   toastRegion: document.querySelector("#toast-region"),
   themeToggle: document.querySelector("#theme-toggle"),
+  toggleLeftPanel: document.querySelector("#toggle-left-panel"),
+  toggleRightPanel: document.querySelector("#toggle-right-panel"),
   settingsDialog: document.querySelector("#settings-dialog"),
   settingsForm: document.querySelector("#settings-form"),
   settingsProvider: document.querySelector("#settings-provider"),
@@ -315,12 +329,6 @@ function showToast(message, type = "success") {
   window.setTimeout(() => toast.remove(), 5200);
 }
 
-function setConnection(online, label) {
-  elements.connection.classList.toggle("is-online", online);
-  elements.connection.classList.toggle("is-offline", !online);
-  elements.connectionLabel.textContent = label;
-}
-
 function setTheme(theme) {
   document.documentElement.dataset.theme = theme;
   localStorage.setItem("mathernet-theme", theme);
@@ -343,56 +351,119 @@ function syncUrl() {
       url.searchParams.delete(key);
     }
   };
+  setOrDelete("map", state.activeMapSessionId);
   setOrDelete("formula", state.selectedId);
   setOrDelete("tab", state.tab, "overview");
-  setOrDelete("depth", state.depth, 1);
-  setOrDelete("q", state.query);
-  setOrDelete("status", state.status);
   window.history.replaceState({}, "", url);
 }
 
 function restoreUrlState() {
   const params = new URLSearchParams(window.location.search);
-  const depth = Number(params.get("depth"));
   const tab = params.get("tab");
   state.query = params.get("q") || "";
-  state.status = params.get("status") || "";
-  state.depth = [1, 2].includes(depth) ? depth : 1;
   state.tab = ["overview", "learning"].includes(tab) ? tab : "overview";
   state.selectedId = params.get("formula");
+  state.activeMapSessionId = params.get("map") || localStorage.getItem("mathernet-map-session");
+  state.leftCollapsed = localStorage.getItem("mathernet-left-collapsed") === "true";
+  state.rightCollapsed = localStorage.getItem("mathernet-right-collapsed") === "true";
   elements.libraryQuery.value = state.query;
-  document.querySelectorAll(".library-controls [data-status]").forEach((button) => {
-    const active = button.dataset.status === state.status;
-    button.classList.toggle("is-active", active);
-    button.setAttribute("aria-pressed", String(active));
-  });
-  document.querySelectorAll("[data-depth]").forEach((button) => {
-    const active = Number(button.dataset.depth) === state.depth;
-    button.classList.toggle("is-active", active);
-    button.setAttribute("aria-pressed", String(active));
-  });
+  applyPanelLayout();
+}
+
+function applyPanelLayout() {
+  elements.workspace.classList.toggle("left-collapsed", state.leftCollapsed);
+  elements.workspace.classList.toggle("right-collapsed", state.rightCollapsed);
+  elements.leftTrack.dataset.leftView = state.leftView;
+  for (const [button, collapsed, label] of [
+    [elements.toggleLeftPanel, state.leftCollapsed, "left"],
+    [elements.toggleRightPanel, state.rightCollapsed, "right"],
+  ]) {
+    button.classList.toggle("is-active", !collapsed);
+    button.setAttribute("aria-pressed", String(!collapsed));
+    button.setAttribute("aria-label", `${collapsed ? "Show" : "Hide"} ${label} panel`);
+  }
+}
+
+function renderSessionList() {
+  if (!state.mapSessions.length) {
+    elements.sessionList.innerHTML = `
+      <div class="list-empty">
+        <h3>No mind maps</h3>
+        <p>Create a mind map to begin.</p>
+      </div>
+    `;
+    return;
+  }
+  elements.sessionList.innerHTML = state.mapSessions.map((session) => {
+    const active = session.id === state.activeMapSessionId;
+    const renaming = session.id === state.renamingSessionId;
+    return `
+      <div class="session-item ${active ? "is-active" : ""}" data-session-id="${escapeHTML(session.id)}">
+        ${
+          renaming
+            ? `<form class="session-rename" data-rename-session>
+                <label class="sr-only" for="rename-${escapeHTML(session.id)}">Mind map name</label>
+                <input id="rename-${escapeHTML(session.id)}" name="name" maxlength="120" value="${escapeHTML(session.name)}" autocomplete="off">
+                <button class="button button-primary button-small" type="submit">Save</button>
+              </form>`
+            : `<button class="session-open" type="button" data-open-session aria-pressed="${active}">
+                <span class="session-name">${escapeHTML(session.name)}</span>
+                <span class="session-count">${session.formula_count}</span>
+                ${session.pinned ? icon("pin") : ""}
+              </button>`
+        }
+        <button
+          class="session-more icon-button icon-button-compact"
+          type="button"
+          data-session-menu
+          aria-label="More actions for ${escapeHTML(session.name)}"
+          aria-expanded="${state.sessionMenuId === session.id}"
+        >
+          ${icon("more")}
+        </button>
+        ${
+          state.sessionMenuId === session.id
+            ? `<div class="session-menu" role="menu">
+                <button type="button" role="menuitem" data-session-rename>${icon("pencil")} Rename</button>
+                <button type="button" role="menuitem" data-session-pin>${icon("pin")} ${session.pinned ? "Unpin" : "Pin"}</button>
+                <button class="menu-danger" type="button" role="menuitem" data-session-delete>${icon("trash")} Delete</button>
+              </div>`
+            : ""
+        }
+      </div>
+    `;
+  }).join("");
+  if (state.renamingSessionId) {
+    elements.sessionList.querySelector(".session-rename input")?.focus();
+    elements.sessionList.querySelector(".session-rename input")?.select();
+  }
 }
 
 function renderLibrary() {
-  document.querySelectorAll("[data-status-count]").forEach((element) => {
-    const count = state.statusCounts[element.dataset.statusCount] ?? 0;
-    element.textContent = `(${count})`;
-  });
   elements.formulaList.setAttribute("aria-busy", "false");
   if (!state.formulas.length) {
     elements.formulaList.innerHTML = `
       <div class="list-empty">
-        <h3>No formulas found</h3>
-        <p>Use the search above to open an existing formula or learn a new one.</p>
+        <h3>No formulas in this map</h3>
+        <p>Use the search above to open an existing formula or create a new one.</p>
       </div>
     `;
     return;
   }
 
-  elements.formulaList.innerHTML = state.formulas
-    .map((formula) => {
-      const topic = formula.topic_tags[0] || "Mathematics";
-      return `
+  const query = state.query.trim().toLowerCase();
+  const groups = new Map();
+  for (const formula of state.formulas) {
+    if (query && ![formula.name, ...(formula.aliases || []), ...(formula.topic_tags || [])]
+      .some((value) => String(value).toLowerCase().includes(query))) continue;
+    const topic = formula.topic_tags?.[0] || "Mathematics";
+    if (!groups.has(topic)) groups.set(topic, []);
+    groups.get(topic).push(formula);
+  }
+  const markup = [...groups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([topic, formulas]) => `
+    <section class="formula-group" aria-labelledby="topic-${escapeHTML(topic.toLowerCase().replace(/[^a-z0-9]+/g, "-"))}">
+      <h3 id="topic-${escapeHTML(topic.toLowerCase().replace(/[^a-z0-9]+/g, "-"))}">${escapeHTML(topic)}</h3>
+      ${formulas.map((formula) => `
         <button
           class="formula-row ${formula.id === state.selectedId ? "is-selected" : ""}"
           type="button"
@@ -400,15 +471,17 @@ function renderLibrary() {
           aria-pressed="${formula.id === state.selectedId}"
         >
           <span class="formula-row-title">${escapeHTML(formula.name)}</span>
-          <span class="formula-row-meta">
-            <span class="formula-row-topic">${escapeHTML(topic)}</span>
-            <span aria-hidden="true">·</span>
-            <span class="row-state" data-state="${escapeHTML(formula.status)}">${escapeHTML(statusLabels[formula.status] || formula.status)}</span>
-          </span>
+          <span class="row-state" data-state="${escapeHTML(formula.status)}">${escapeHTML(statusLabels[formula.status] || formula.status)}</span>
         </button>
-      `;
-    })
-    .join("");
+      `).join("")}
+    </section>
+  `).join("");
+  elements.formulaList.innerHTML = markup || `
+    <div class="list-empty">
+      <h3>No matching formulas</h3>
+      <p>Try a different name, alias, or topic.</p>
+    </div>
+  `;
 }
 
 function renderGraph() {
@@ -803,11 +876,13 @@ function renderInspector() {
     elements.inspectorTitle.textContent = "Select a formula";
     elements.inspectorStatus.textContent = "No selection";
     elements.inspectorStatus.className = "status-badge neutral";
+    elements.deleteFormula.disabled = true;
   } else {
     const formula = card.formula;
     elements.inspectorTitle.textContent = formula.name;
     elements.inspectorStatus.textContent = statusLabels[formula.status] || formula.status;
     elements.inspectorStatus.className = `status-badge ${formula.status}`;
+    elements.deleteFormula.disabled = false;
   }
   renderOverview();
   renderLearning();
@@ -815,9 +890,11 @@ function renderInspector() {
 }
 
 function renderAll() {
+  renderSessionList();
   renderLibrary();
   renderGraph();
   renderInspector();
+  applyPanelLayout();
 }
 
 function setTab(tab, focus = true) {
@@ -835,44 +912,96 @@ function setTab(tab, focus = true) {
   syncUrl();
 }
 
-async function loadHealth() {
+async function loadMapSessions({ preferredId = "" } = {}) {
   try {
-    state.health = await api("/api/health");
-    setConnection(true, "Service connected");
-  } catch {
-    setConnection(false, "Local service offline");
-  }
-}
-
-async function loadFormulas() {
-  const requestId = ++state.libraryRequest;
-  elements.formulaList.setAttribute("aria-busy", "true");
-  elements.formulaList.innerHTML = `<div class="loading-row">Loading formulas…</div>`;
-  const params = new URLSearchParams();
-  if (state.query) params.set("query", state.query);
-  if (state.status) params.set("status", state.status);
-  params.set("limit", "200");
-  try {
-    const payload = await api(`/api/formulas?${params.toString()}`);
-    if (requestId !== state.libraryRequest) return;
-    state.formulas = payload.items;
-    state.statusCounts = {
-      all: payload.status_counts?.all ?? payload.total,
-      learning: payload.status_counts?.learning ?? 0,
-      reviewed: payload.status_counts?.reviewed ?? 0,
-    };
-    renderLibrary();
-    syncUrl();
+    const payload = await api("/api/map-sessions");
+    state.mapSessions = payload.sessions || [];
+    const requestedId = preferredId || state.activeMapSessionId;
+    const selected = state.mapSessions.find((session) => session.id === requestedId)
+      || state.mapSessions.find((session) => session.id === localStorage.getItem("mathernet-map-session"))
+      || state.mapSessions[0];
+    renderSessionList();
+    if (selected) {
+      await openMapSession(selected.id, { updateUrl: false });
+    } else {
+      state.activeMapSessionId = null;
+      state.activeMapSession = null;
+      state.formulas = [];
+      state.graph = { nodes: [], edges: [], root_id: null };
+      renderAll();
+    }
   } catch (error) {
-    if (requestId !== state.libraryRequest) return;
-    elements.formulaList.setAttribute("aria-busy", "false");
-    elements.formulaList.innerHTML = `
+    elements.sessionList.innerHTML = `
       <div class="list-empty">
-        <h3>Formula library unavailable</h3>
+        <h3>Mind maps unavailable</h3>
         <p>${escapeHTML(error.message)}</p>
       </div>
     `;
   }
+}
+
+async function openMapSession(
+  sessionId,
+  { updateUrl = true, revealFormulas = updateUrl } = {},
+) {
+  if (!sessionId) return;
+  if (state.notesDirty && state.activeMapSessionId && state.activeMapSessionId !== sessionId) {
+    const leave = window.confirm("You have an unsaved note. Leave it and open another mind map?");
+    if (!leave) return;
+  }
+  const requestId = ++state.libraryRequest;
+  elements.formulaList.setAttribute("aria-busy", "true");
+  elements.formulaList.innerHTML = `<div class="loading-row">Opening mind map…</div>`;
+  try {
+    const [session, graph] = await Promise.all([
+      api(`/api/map-sessions/${encodeURIComponent(sessionId)}`),
+      api(`/api/map-sessions/${encodeURIComponent(sessionId)}/graph`),
+    ]);
+    if (requestId !== state.libraryRequest) return;
+    state.activeMapSession = session;
+    state.activeMapSessionId = session.id;
+    state.formulas = session.formulas || [];
+    state.graph = graph;
+    state.leftView = revealFormulas ? "formulas" : state.leftView;
+    state.sessionMenuId = null;
+    state.renamingSessionId = null;
+    localStorage.setItem("mathernet-map-session", session.id);
+    if (!state.formulas.some((formula) => formula.id === state.selectedId)) {
+      state.selectedId = null;
+      state.selectedCard = null;
+      state.introduction = null;
+      state.notesDirty = false;
+    }
+    elements.graphTitle.textContent = session.name;
+    elements.activeMapLabel.textContent = session.name;
+    renderAll();
+    if (updateUrl) syncUrl();
+    if (state.selectedId) await refreshSelection();
+  } catch (error) {
+    if (requestId !== state.libraryRequest) return;
+    if (error.status === 404) {
+      state.activeMapSessionId = null;
+      localStorage.removeItem("mathernet-map-session");
+      await loadMapSessions();
+      return;
+    }
+    elements.formulaList.setAttribute("aria-busy", "false");
+    elements.formulaList.innerHTML = `
+      <div class="list-empty">
+        <h3>Mind map unavailable</h3>
+        <p>${escapeHTML(error.message)}</p>
+      </div>
+    `;
+    showToast(error.message, "error");
+  }
+}
+
+async function loadFormulas() {
+  if (state.activeMapSessionId) {
+    await openMapSession(state.activeMapSessionId);
+    return;
+  }
+  await loadMapSessions();
 }
 
 async function loadFormulaIntroduction(formulaId) {
@@ -901,18 +1030,16 @@ async function loadFormulaIntroduction(formulaId) {
 
 async function loadSelection(formulaId) {
   const requestId = ++state.selectionRequest;
-  const [card, graph] = await Promise.all([
-    api(`/api/formulas/${encodeURIComponent(formulaId)}`),
-    api(`/api/formulas/${encodeURIComponent(formulaId)}/graph?depth=${state.depth}`),
-  ]);
+  const card = await api(`/api/formulas/${encodeURIComponent(formulaId)}`);
   if (requestId !== state.selectionRequest) return;
   state.selectedId = formulaId;
   state.selectedCard = card;
-  state.graph = graph;
   state.introduction = state.introductions[formulaId] || null;
   state.introductionLoading = !state.introduction;
   state.introductionError = "";
   state.notesDirty = false;
+  state.rightCollapsed = false;
+  localStorage.setItem("mathernet-right-collapsed", "false");
   renderAll();
   syncUrl();
   if (!state.introduction) loadFormulaIntroduction(formulaId);
@@ -1061,8 +1188,15 @@ async function submitFormulaSearch(event) {
       method: "POST",
       body: JSON.stringify({ query }),
     });
-    await loadFormulas();
-    await selectFormula(result.formula.formula.id);
+    const formulaId = result.formula.formula.id;
+    if (state.activeMapSessionId) {
+      await api(`/api/map-sessions/${encodeURIComponent(state.activeMapSessionId)}/formulas`, {
+        method: "POST",
+        body: JSON.stringify({ formula_id: formulaId }),
+      });
+    }
+    await loadMapSessions({ preferredId: state.activeMapSessionId });
+    await selectFormula(formulaId);
     showToast(result.created ? "Formula card created." : "Existing formula opened.");
     for (const warning of result.warnings || []) {
       showToast(warning, "notice");
@@ -1074,7 +1208,6 @@ async function submitFormulaSearch(event) {
         "notice",
       );
     }
-    await loadHealth();
   } catch (error) {
     showToast(
       error.reasonCode === "no_reliable_source"
@@ -1134,7 +1267,6 @@ async function setFormulaStatus(status) {
     renderInspector();
     renderLibrary();
     showToast(`Study status changed to ${statusLabels[status] || status}.`);
-    await loadHealth();
   } catch (error) {
     showToast(error.message, "error");
   }
@@ -1150,7 +1282,6 @@ async function confirmEdge(edgeId, updatedAt) {
     });
     await refreshSelection();
     showToast("Dependency confirmed.");
-    await loadHealth();
   } catch (error) {
     showToast(error.message, "error");
     setBusy(button, false);
@@ -1175,11 +1306,97 @@ async function confirmReject() {
     state.pendingRejectEdgeId = null;
     await refreshSelection();
     showToast("Dependency suggestion rejected.");
-    await loadHealth();
   } catch (error) {
     showToast(error.message, "error");
   } finally {
     setBusy(elements.confirmReject, false);
+  }
+}
+
+function openSessionComposer() {
+  elements.sessionCreate.hidden = false;
+  elements.sessionName.value = "";
+  elements.sessionName.focus();
+}
+
+async function createMapSession(event) {
+  event.preventDefault();
+  const name = elements.sessionName.value.trim();
+  if (!name) {
+    elements.sessionName.focus();
+    return;
+  }
+  const button = elements.sessionCreate.querySelector("button[type='submit']");
+  setBusy(button, true, "Creating…");
+  try {
+    const session = await api("/api/map-sessions", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+    elements.sessionCreate.hidden = true;
+    await loadMapSessions({ preferredId: session.id });
+    showToast(`Mind map “${session.name}” created.`);
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function updateMapSession(sessionId, payload) {
+  try {
+    const updated = await api(`/api/map-sessions/${encodeURIComponent(sessionId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    state.sessionMenuId = null;
+    state.renamingSessionId = null;
+    await loadMapSessions({ preferredId: sessionId });
+    showToast(payload.name ? "Mind map renamed." : updated.pinned ? "Mind map pinned." : "Mind map unpinned.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function deleteMapSession(sessionId) {
+  const session = state.mapSessions.find((item) => item.id === sessionId);
+  const confirmed = window.confirm(`Delete the mind map “${session?.name || "Untitled"}”? Formula cards will stay in your library.`);
+  if (!confirmed) return;
+  try {
+    await api(`/api/map-sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+    state.sessionMenuId = null;
+    if (state.activeMapSessionId === sessionId) {
+      state.activeMapSessionId = null;
+      state.activeMapSession = null;
+      state.selectedId = null;
+      state.selectedCard = null;
+    }
+    await loadMapSessions();
+    showToast("Mind map deleted.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function deleteSelectedFormula() {
+  const card = state.selectedCard;
+  if (!card) return;
+  const name = card.formula.name;
+  const confirmed = window.confirm(`Delete “${name}” from Mathernet? This removes the formula card and its relationships from every mind map.`);
+  if (!confirmed) return;
+  setBusy(elements.deleteFormula, true, "");
+  try {
+    await api(`/api/formulas/${encodeURIComponent(card.formula.id)}`, { method: "DELETE" });
+    state.selectedId = null;
+    state.selectedCard = null;
+    state.introduction = null;
+    state.notesDirty = false;
+    await loadMapSessions({ preferredId: state.activeMapSessionId });
+    showToast(`“${name}” deleted.`);
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    setBusy(elements.deleteFormula, false);
   }
 }
 
@@ -1189,40 +1406,76 @@ function bindEvents() {
   let libraryTimer;
   elements.libraryQuery.addEventListener("input", () => {
     window.clearTimeout(libraryTimer);
-    libraryTimer = window.setTimeout(async () => {
+    libraryTimer = window.setTimeout(() => {
       state.query = elements.libraryQuery.value.trim();
-      await loadFormulas();
-    }, 220);
+      renderLibrary();
+      syncUrl();
+    }, 120);
   });
 
-  document.querySelectorAll("[data-status][aria-pressed]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      state.status = button.dataset.status;
-      document.querySelectorAll(".library-controls [data-status]").forEach((item) => {
-        const active = item === button;
-        item.classList.toggle("is-active", active);
-        item.setAttribute("aria-pressed", String(active));
-      });
-      await loadFormulas();
-    });
+  elements.newMapSession.addEventListener("click", openSessionComposer);
+  elements.sessionCreate.addEventListener("submit", createMapSession);
+  elements.backToSessions.addEventListener("click", () => {
+    state.leftView = "sessions";
+    state.sessionMenuId = null;
+    state.renamingSessionId = null;
+    renderSessionList();
+    applyPanelLayout();
   });
-
-  document.querySelectorAll("[data-depth]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      state.depth = Number(button.dataset.depth);
-      document.querySelectorAll("[data-depth]").forEach((item) => {
-        const active = item === button;
-        item.classList.toggle("is-active", active);
-        item.setAttribute("aria-pressed", String(active));
-      });
-      await refreshSelection();
-    });
+  elements.sessionList.addEventListener("submit", (event) => {
+    const form = event.target.closest("[data-rename-session]");
+    if (!form) return;
+    event.preventDefault();
+    const item = event.target.closest("[data-session-id]");
+    const name = new FormData(form).get("name")?.toString().trim();
+    if (item && name) updateMapSession(item.dataset.sessionId, { name });
+  });
+  elements.sessionList.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-session-id]");
+    if (!item) return;
+    const sessionId = item.dataset.sessionId;
+    if (event.target.closest("[data-open-session]")) {
+      openMapSession(sessionId);
+    } else if (event.target.closest("[data-session-menu]")) {
+      state.sessionMenuId = state.sessionMenuId === sessionId ? null : sessionId;
+      state.renamingSessionId = null;
+      renderSessionList();
+    } else if (event.target.closest("[data-session-rename]")) {
+      state.sessionMenuId = null;
+      state.renamingSessionId = sessionId;
+      renderSessionList();
+    } else if (event.target.closest("[data-session-pin]")) {
+      const session = state.mapSessions.find((item) => item.id === sessionId);
+      updateMapSession(sessionId, { pinned: !session?.pinned });
+    } else if (event.target.closest("[data-session-delete]")) {
+      deleteMapSession(sessionId);
+    }
   });
 
   elements.formulaList.addEventListener("click", (event) => {
     const row = event.target.closest("[data-formula-id]");
     if (row) selectFormula(row.dataset.formulaId);
   });
+
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest(".session-item") && state.sessionMenuId) {
+      state.sessionMenuId = null;
+      renderSessionList();
+    }
+  });
+
+  elements.toggleLeftPanel.addEventListener("click", () => {
+    state.leftCollapsed = !state.leftCollapsed;
+    localStorage.setItem("mathernet-left-collapsed", String(state.leftCollapsed));
+    applyPanelLayout();
+  });
+  elements.toggleRightPanel.addEventListener("click", () => {
+    state.rightCollapsed = !state.rightCollapsed;
+    localStorage.setItem("mathernet-right-collapsed", String(state.rightCollapsed));
+    applyPanelLayout();
+    if (!state.rightCollapsed && state.selectedId) refreshSelection();
+  });
+  elements.deleteFormula.addEventListener("click", deleteSelectedFormula);
 
   document.querySelectorAll("[data-tab]").forEach((button) => {
     button.addEventListener("click", () => setTab(button.dataset.tab, false));
@@ -1283,10 +1536,10 @@ function bindEvents() {
     const button = document.querySelector("#refresh-data");
     button.disabled = true;
     button.setAttribute("aria-busy", "true");
-    await Promise.all([loadHealth(), loadFormulas(), refreshSelection()]);
+    await loadMapSessions({ preferredId: state.activeMapSessionId });
     button.disabled = false;
     button.removeAttribute("aria-busy");
-    showToast("Formula library refreshed.");
+    showToast("Mind map refreshed.");
   });
 
   elements.overviewContent.addEventListener("click", (event) => {
@@ -1356,17 +1609,7 @@ async function initialize() {
   bindEvents();
   renderAll();
   await loadGatewaySettings();
-  await Promise.all([loadHealth(), loadFormulas()]);
-  const selected = state.selectedId || state.formulas[0]?.id;
-  if (selected) {
-    try {
-      await loadSelection(selected);
-    } catch (error) {
-      showToast(error.message, "error");
-    }
-  } else {
-    renderAll();
-  }
+  await loadMapSessions();
 }
 
 initialize();
