@@ -7,6 +7,7 @@ from .errors import NotFoundError, ValidationError
 from .models import (
     AIModule,
     DependencyEdge,
+    EdgeEvidence,
     EdgeRelation,
     FormulaNode,
     FormulaStatus,
@@ -163,6 +164,8 @@ class GraphRepository:
         relation: EdgeRelation,
         rationale: str,
         sources: list[str],
+        manual: bool = False,
+        evidence_status: EdgeEvidence | str | None = None,
     ) -> DependencyEdge:
         try:
             relation = EdgeRelation(relation)
@@ -174,11 +177,22 @@ class GraphRepository:
             target_id=target_id,
             rationale=rationale,
             sources=sources,
+            allow_empty_rationale=manual,
         )
         if any(edge.id == edge_id for edge in self.document.edges):
             raise ValidationError(f"edge ID {edge_id} already exists")
         self.get_formula(source_id)
         self.get_formula(target_id)
+        try:
+            evidence = (
+                EdgeEvidence(evidence_status)
+                if evidence_status is not None
+                else EdgeEvidence.SUPPORTED if sources else EdgeEvidence.UNVERIFIED
+            )
+        except (TypeError, ValueError) as error:
+            raise ValidationError(
+                f"unsupported edge evidence status {evidence_status!r}"
+            ) from error
         edge = DependencyEdge(
             id=edge_id,
             source_id=source_id,
@@ -186,10 +200,24 @@ class GraphRepository:
             relation=relation,
             rationale=normalize_text(rationale),
             sources=list(dict.fromkeys(sources)),
-            verification_status=VerificationStatus.AI_SUGGESTED,
+            verification_status=(
+                VerificationStatus.USER_VERIFIED
+                if manual
+                else VerificationStatus.AI_SUGGESTED
+            ),
+            created_by="manual" if manual else "ai",
+            evidence_status=evidence,
         )
         ensure_edge_addition_allowed(self.document, edge)
         self.document.edges.append(edge)
+        self._validate_references()
+        return edge
+
+    def delete_edge(self, edge_id: str) -> DependencyEdge:
+        edge = self.get_edge(edge_id)
+        self.document.edges = [
+            item for item in self.document.edges if item.id != edge_id
+        ]
         self._validate_references()
         return edge
 
@@ -246,6 +274,7 @@ class GraphRepository:
             target_id=edge.target_id,
             rationale=rationale,
             sources=sources,
+            allow_empty_rationale=edge.created_by == "manual",
         )
         validate_edge_transition(edge.verification_status, VerificationStatus.USER_EDITED)
         now = utc_now()

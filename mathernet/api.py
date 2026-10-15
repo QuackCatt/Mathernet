@@ -76,8 +76,11 @@ def handle_api_request(
                 ),
             )
         if path == "/api/learn" and method == "POST":
-            payload = _require_body(body, {"query"}, set())
-            result = service.learn(_required_string(payload, "query"))
+            payload = _require_body(body, {"query"}, {"map_session_id"})
+            result = service.learn(
+                _required_string(payload, "query"),
+                map_session_id=_optional_string(payload, "map_session_id"),
+            )
             return ApiResponse(201 if result["created"] else 200, result)
         if path == "/api/export" and method == "GET":
             return ApiResponse(200, service.export_graph())
@@ -199,25 +202,97 @@ def handle_api_request(
             payload = _require_body(
                 body,
                 {"source_id", "target_id", "relation", "rationale", "source_ids"},
-                {"edge_id"},
+                {"edge_id", "manual"},
             )
             source_ids = payload["source_ids"]
             _require_string_array(payload, "source_ids")
+            manual = payload.get("manual", False)
+            if not isinstance(manual, bool):
+                raise ValidationError("manual must be a boolean")
+            rationale = payload.get("rationale")
+            if not isinstance(rationale, str):
+                raise ValidationError("rationale must be a string")
             return ApiResponse(
                 201,
                 service.add_edge(
                     source_ref=_required_string(payload, "source_id"),
                     target_ref=_required_string(payload, "target_id"),
                     relation=_required_string(payload, "relation"),
-                    rationale=_required_string(payload, "rationale"),
+                    rationale=rationale,
                     source_ids=source_ids,
                     edge_id=_optional_string(payload, "edge_id"),
+                    manual=manual,
+                ),
+            )
+
+        relationship_deep_sessions_match = re.fullmatch(
+            r"/api/edges/([^/]+)/deep-dive/sessions",
+            path,
+        )
+        if relationship_deep_sessions_match:
+            edge_id = relationship_deep_sessions_match.group(1)
+            if method == "GET":
+                return ApiResponse(
+                    200,
+                    {
+                        "sessions": service.list_relationship_deep_dive_sessions(
+                            edge_id
+                        )
+                    },
+                )
+            if method == "POST":
+                _require_body(body, set(), set())
+                return ApiResponse(
+                    201,
+                    service.create_relationship_deep_dive_session(edge_id),
+                )
+
+        relationship_deep_session_match = re.fullmatch(
+            r"/api/edges/([^/]+)/deep-dive/sessions/([^/]+)",
+            path,
+        )
+        if relationship_deep_session_match:
+            edge_id, session_id = relationship_deep_session_match.groups()
+            if method == "GET":
+                return ApiResponse(
+                    200,
+                    service.get_relationship_deep_dive_session(edge_id, session_id),
+                )
+            if method == "DELETE":
+                return ApiResponse(
+                    200,
+                    service.delete_relationship_deep_dive_session(edge_id, session_id),
+                )
+
+        relationship_deep_chat_match = re.fullmatch(
+            r"/api/edges/([^/]+)/deep-dive/sessions/([^/]+)/chat",
+            path,
+        )
+        if relationship_deep_chat_match and method == "POST":
+            payload = _require_body(body, {"message"}, set())
+            edge_id, session_id = relationship_deep_chat_match.groups()
+            return ApiResponse(
+                200,
+                service.chat_relationship_deep_dive(
+                    edge_id,
+                    session_id,
+                    _required_string(payload, "message"),
                 ),
             )
 
         edge_match = re.fullmatch(r"/api/edges/([^/]+)", path)
         if edge_match and method == "GET":
             return ApiResponse(200, service.get_edge_payload(edge_match.group(1)))
+
+        if edge_match and method == "DELETE":
+            payload = _require_body(body, set(), {"expected_updated_at"})
+            return ApiResponse(
+                200,
+                service.delete_edge(
+                    edge_match.group(1),
+                    expected_updated_at=_optional_string(payload, "expected_updated_at"),
+                ),
+            )
 
         if edge_match and method == "PATCH":
             payload = _require_body(
@@ -347,9 +422,21 @@ def openapi_document() -> dict[str, Any]:
             "/api/edges/{edge_id}": {
                 "get": {"summary": "Read one dependency edge"},
                 "patch": {"summary": "Edit and explicitly accept an edge"},
+                "delete": {"summary": "Delete a dependency edge"},
             },
             "/api/edges/{edge_id}/confirm": {"post": {"summary": "Explicitly confirm an AI-suggested edge"}},
             "/api/edges/{edge_id}/reject": {"post": {"summary": "Reject an AI-suggested edge"}},
+            "/api/edges/{edge_id}/deep-dive/sessions": {
+                "get": {"summary": "List saved relationship deep-dive sessions"},
+                "post": {"summary": "Generate a relationship deep-dive session"},
+            },
+            "/api/edges/{edge_id}/deep-dive/sessions/{session_id}": {
+                "get": {"summary": "Read one relationship deep-dive session"},
+                "delete": {"summary": "Delete one relationship deep-dive session"},
+            },
+            "/api/edges/{edge_id}/deep-dive/sessions/{session_id}/chat": {
+                "post": {"summary": "Continue a relationship deep-dive conversation"}
+            },
             "/api/export": {"get": {"summary": "Export the full schema-v1 graph"}},
         },
         "components": {

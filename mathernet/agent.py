@@ -3,11 +3,13 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 
-from .agent_skills import FormulaDiscovery
+from .agent_skills import KNOWN_RELATIONSHIP_RULES, FormulaDiscovery
 from .errors import NotFoundError, RefusalError, SynthesisError, ValidationError
 from .llm import Synthesizer, SynthesisDependency, SynthesisResult
 from .models import (
     DependencyEdge,
+    EdgeEvidence,
+    EdgeRelation,
     FormulaNode,
     RefusalReason,
     SourceRecord,
@@ -44,7 +46,7 @@ class FormulaAgent:
         enforce_request_safety(query)
         return self.repository.find_formula(query)
 
-    def learn(self, query: str) -> LearnResult:
+    def learn(self, query: str, map_context: dict | None = None) -> LearnResult:
         enforce_request_safety(query)
         existing = self.repository.find_formula(query)
         if existing is not None:
@@ -70,15 +72,22 @@ class FormulaAgent:
                 RefusalReason.NO_RELIABLE_SOURCE.value,
             )
 
-        synthesis = self.synthesizer.synthesize(canonical_query, results)
+        if map_context is None:
+            synthesis = self.synthesizer.synthesize(canonical_query, results)
+        else:
+            synthesis = self.synthesizer.synthesize(canonical_query, results, map_context)
         duplicate = self._find_synthesized_duplicate(synthesis, canonical_query)
         if duplicate is not None:
             return LearnResult(node=duplicate, created=False)
+        synthesis.dependencies = self._merge_known_relationships(
+            synthesis.name or canonical_query,
+            synthesis.dependencies,
+            map_context,
+        )
 
         citation_results = synthesis.sources if direct_mode else results
         if direct_mode and not citation_results:
             synthesis.ai_module.derivation_steps = []
-            synthesis.dependencies = []
             synthesis.warnings.append(
                 "AI answer saved without source citations; verify important claims before relying on them."
             )
@@ -99,7 +108,10 @@ class FormulaAgent:
             sources=[source.id for source in source_records],
         )
         edges, unresolved = self._resolve_dependencies(
-            node, synthesis.dependencies, source_records
+            node,
+            synthesis.dependencies,
+            source_records,
+            set((map_context or {}).get("formula_ids", [])),
         )
         warnings = list(synthesis.warnings)
         if unresolved:
@@ -114,6 +126,61 @@ class FormulaAgent:
             unresolved_dependencies=unresolved,
             warnings=warnings,
         )
+
+    @staticmethod
+    def _merge_known_relationships(
+        target_name: str,
+        dependencies: list[SynthesisDependency],
+        map_context: dict | None,
+    ) -> list[SynthesisDependency]:
+        if not map_context:
+            return dependencies
+        target_key = formula_key(target_name)
+        known_by_target = {
+            formula_key(target): (
+                source,
+                relation,
+                rationale,
+            )
+            for source, target, relation, rationale in KNOWN_RELATIONSHIP_RULES
+        }
+        rule = known_by_target.get(target_key)
+        if rule is None:
+            return dependencies
+        source_name, relation_value, rationale = rule
+        source_key = formula_key(source_name)
+        local_source = next(
+            (
+                item
+                for item in map_context.get("formulas", [])
+                if formula_key(str(item.get("name", ""))) == source_key
+                or formula_key(str(item.get("local_formula_id", ""))) == source_key
+            ),
+            None,
+        )
+        if local_source is None:
+            return dependencies
+        local_formula_id = str(local_source.get("local_formula_id", "")).strip()
+        if not local_formula_id:
+            return dependencies
+        merged = list(dependencies)
+        existing = {
+            (dependency.local_formula_id, dependency.relation.value)
+            for dependency in merged
+        }
+        relation = EdgeRelation(relation_value)
+        if (local_formula_id, relation.value) not in existing:
+            merged.append(
+                SynthesisDependency(
+                    prerequisite_name=str(local_source.get("name") or source_name),
+                    relation=relation,
+                    rationale=rationale,
+                    source_urls=[],
+                    local_formula_id=local_formula_id,
+                    confidence=1.0,
+                )
+            )
+        return merged
 
     def _discover_formula(
         self,
@@ -168,6 +235,10 @@ class FormulaAgent:
     def _validate_and_store_sources(
         self, synthesis: SynthesisResult, results: list[SearchResult]
     ) -> list[SourceRecord]:
+        if not results:
+            for dependency in synthesis.dependencies:
+                dependency.source_urls = []
+            return []
         allowed_urls = {result.url for result in results}
         cited_urls = {
             url
@@ -188,25 +259,32 @@ class FormulaAgent:
         target: FormulaNode,
         dependencies: list[SynthesisDependency],
         source_records: list[SourceRecord],
+        map_formula_ids: set[str],
     ) -> tuple[list[DependencyEdge], list[str]]:
         valid_sources = {source.id: source.url for source in source_records}
         edges: list[DependencyEdge] = []
         unresolved: list[str] = []
         for dependency in dependencies:
-            prerequisite = self.repository.find_formula(dependency.prerequisite_name)
+            prerequisite = None
+            if dependency.local_formula_id:
+                try:
+                    prerequisite = self.repository.get_formula(dependency.local_formula_id)
+                except NotFoundError:
+                    prerequisite = None
+            if prerequisite is None:
+                prerequisite = self.repository.find_formula(dependency.prerequisite_name)
             if prerequisite is None:
                 unresolved.append(dependency.prerequisite_name)
                 continue
-            if prerequisite.id == target.id:
+            if prerequisite.id == target.id or (
+                map_formula_ids and prerequisite.id not in map_formula_ids
+            ):
                 continue
             source_ids = [
                 source_id
                 for source_id, url in valid_sources.items()
                 if url in dependency.source_urls
             ]
-            if not source_ids:
-                unresolved.append(dependency.prerequisite_name)
-                continue
             edge_id = self.repository.unique_edge_id(
                 stable_id(
                     "edge",
@@ -224,6 +302,11 @@ class FormulaAgent:
                     relation=dependency.relation,
                     rationale=dependency.rationale,
                     sources=source_ids,
+                    evidence_status=(
+                        EdgeEvidence.SUPPORTED
+                        if source_ids
+                        else EdgeEvidence.UNVERIFIED
+                    ),
                 )
             except ValidationError:
                 continue

@@ -23,9 +23,54 @@ FORMULA_DISCOVERY_SKILL = (
 FORMULA_SYNTHESIS_SKILL = (
     "You are Mathernet, a study-only formula learning assistant. Use the model's built-in web search "
     "when available and no source material is supplied. When source material is supplied, treat it as "
-    "the factual boundary. Never invent a citation, URL, formula, derivation, or dependency. If web "
-    "results are unavailable, give a carefully qualified answer and return an empty sources list. "
-    "Return only valid JSON matching the requested schema. Do not solve exams or homework."
+    "the factual boundary for factual claims. You may infer relationships between mathematical "
+    "objects from their definitions and notation even without citations. Never invent a citation or "
+    "URL. If web results are unavailable, give a carefully qualified answer and return an empty "
+    "sources list. Return only valid JSON matching the requested schema. Do not solve exams or homework."
+)
+
+FORMULA_RELATIONSHIP_SKILL = (
+    "Relationship discovery is a required graph-building step. Compare the requested formula with "
+    "EVERY formula in active_map.formulas before returning. Do not stop after finding one match. For "
+    "each mathematically meaningful connection, emit one dependency using the exact local_formula_id "
+    "from the catalog. Look deliberately for prerequisites, derivation bases, equivalent forms, "
+    "special cases, and generalizations. Treat shared topic tags as weak evidence only; prefer "
+    "symbolic or definitional links. Distributions especially require checking shared parameters, "
+    "limiting cases, transformations, conjugacy, aggregation, conditional relationships, and named "
+    "special cases. Include both directions of reasoning in rationale when useful, but keep the edge "
+    "directional from the related formula to the new formula. Do not force a connection when only the "
+    "broad field is shared. Confidence must reflect mathematical certainty, not stylistic confidence."
+)
+
+KNOWN_RELATIONSHIP_RULES = (
+    ("pythagorean theorem", "distance formula", "derivation_basis",
+     "The distance formula is the coordinate-plane form of the Pythagorean theorem."),
+    ("power series", "euler's formula", "derivation_basis",
+     "The exponential, sine, and cosine series combine to produce Euler's formula."),
+    ("euler's formula", "euler's identity", "special_case",
+     "Euler's identity is Euler's formula evaluated at x = pi."),
+    ("taylor series", "exponential series", "special_case",
+     "The exponential series is the Taylor series of the exponential function."),
+    ("exponential series", "complex exponential", "derivation_basis",
+     "Extending the exponential series to complex arguments defines the complex exponential."),
+    ("derivative definition", "product rule", "derivation_basis",
+     "The product rule follows by expanding the derivative definition for a product."),
+    ("dot product", "cauchy-schwarz inequality", "derivation_basis",
+     "The Cauchy-Schwarz inequality bounds the normalized dot product."),
+    ("linear independence", "rank", "prerequisite",
+     "Rank counts independent directions, so linear independence supplies its conceptual basis."),
+    ("rank", "invertible matrix theorem", "prerequisite",
+     "Full rank is one of the equivalent conditions in the invertible matrix theorem."),
+    ("conditional probability", "bayes' theorem", "prerequisite",
+     "Bayes' theorem rewrites an inverse conditional probability using conditional probability."),
+    ("expectation", "variance", "prerequisite",
+     "Variance is defined from expected squared deviation."),
+    ("variance", "standard deviation", "special_case",
+     "Standard deviation is the positive square root of variance."),
+    ("least squares", "normal equation", "derivation_basis",
+     "The normal equation is obtained by minimizing the least-squares objective."),
+    ("discriminant", "quadratic formula", "prerequisite",
+     "The discriminant determines the two roots given by the quadratic formula."),
 )
 
 DEDUPLICATION_SKILL = (
@@ -43,6 +88,20 @@ FORMULA_DEEP_DIVE_SKILL = (
 FORMULA_CHAT_SKILL = (
     "Continue the study conversation using the same formula deep-dive skill instructions. Be direct, "
     "acknowledge uncertainty, use LaTeX for mathematics, and never invent citations or source URLs."
+)
+
+RELATIONSHIP_DEEP_DIVE_SKILL = (
+    "Read and follow the local relationship deep-dive skill instructions before generating. Explain "
+    "why the two formulas are mathematically connected, using the saved relationship type and "
+    "rationale. Use LaTeX for mathematics, acknowledge uncertainty, and never invent citations."
+)
+
+RELATIONSHIP_VALIDATION_SKILL = (
+    "You are Mathernet's relationship verification skill. Use the model's built-in web search when "
+    "available. Judge the learner's explanation separately from external evidence. An empty, vague, "
+    "incoherent, or mathematically incorrect explanation is not reasonable. Mark web_supported true "
+    "only when real research sources specifically support the stated relationship between these two "
+    "formulas. Never invent citations or URLs. Return only valid JSON matching the requested schema."
 )
 
 FORMULA_INTRODUCTION_SKILL = (
@@ -111,6 +170,31 @@ FORMULA_INTRODUCTION_SCHEMA = {
     },
 }
 
+RELATIONSHIP_VALIDATION_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["explanation_is_reasonable", "web_supported", "assessment", "sources"],
+    "properties": {
+        "explanation_is_reasonable": {"type": "boolean"},
+        "web_supported": {"type": "boolean"},
+        "assessment": {"type": "string"},
+        "sources": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["title", "url", "publisher", "excerpt"],
+                "properties": {
+                    "title": {"type": "string"},
+                    "url": {"type": "string"},
+                    "publisher": {"type": "string"},
+                    "excerpt": {"type": "string"},
+                },
+            },
+        },
+    },
+}
+
 
 @dataclass(slots=True)
 class FormulaDiscovery:
@@ -172,7 +256,9 @@ def parse_formula_discovery(raw: str) -> FormulaDiscovery:
 
 def build_formula_synthesis_prompt(*, has_sources: bool) -> str:
     mode = "source_bounded_answer" if has_sources else "provider_native_answer"
-    return f"{FORMULA_SYNTHESIS_SKILL}\nCurrent mode: {mode}."
+    return (
+        f"{FORMULA_SYNTHESIS_SKILL}\n{FORMULA_RELATIONSHIP_SKILL}\nCurrent mode: {mode}."
+    )
 
 
 def build_formula_deep_dive_prompt(
@@ -193,6 +279,26 @@ def build_formula_deep_dive_prompt(
     )
 
 
+def build_relationship_deep_dive_prompt(
+    relationship: dict[str, Any],
+    sources: Iterable[dict[str, Any]],
+) -> str:
+    return json.dumps(
+        {
+            "skill_file": "mathernet/skills/relationship_deep_dive.md",
+            "relationship": relationship,
+            "known_sources": list(sources),
+            "task": (
+                "Generate the session's initial long-form explanation of the relationship. When the "
+                "relationship was manually created, treat its rationale as the learner's hypothesis "
+                "and compare it with reliable research. If no independent support is found, return "
+                "empty sources and keep the article strictly limited to the learner's note."
+            ),
+        },
+        ensure_ascii=False,
+    )
+
+
 def parse_formula_deep_dive(raw: str) -> dict[str, Any]:
     data = _json_object(raw)
     introduction = _text(data.get("introduction"))
@@ -207,6 +313,35 @@ def parse_formula_deep_dive(raw: str) -> dict[str, Any]:
         },
         "sources": _source_items(data.get("sources")),
         "warnings": _text_list(data.get("warnings")),
+    }
+
+
+def build_relationship_validation_prompt(
+    relationship: dict[str, Any],
+    sources: Iterable[dict[str, Any]],
+) -> str:
+    return json.dumps(
+        {
+            "skill_file": "mathernet/skills/relationship_deep_dive.md",
+            "relationship": relationship,
+            "known_sources": list(sources),
+            "task": (
+                "Verify whether the stated relationship is mathematically meaningful. Assess the "
+                "learner's explanation on its own, then use web research when available to look for "
+                "independent support. Return only sources that actually support this relationship."
+            ),
+        },
+        ensure_ascii=False,
+    )
+
+
+def parse_relationship_validation(raw: str) -> dict[str, Any]:
+    data = _json_object(raw)
+    return {
+        "explanation_is_reasonable": bool(data.get("explanation_is_reasonable")),
+        "web_supported": bool(data.get("web_supported")),
+        "assessment": _text(data.get("assessment")),
+        "sources": _source_items(data.get("sources")),
     }
 
 

@@ -173,6 +173,7 @@ def validate_edge_fields(
     target_id: str,
     rationale: str,
     sources: Iterable[str],
+    allow_empty_rationale: bool = False,
 ) -> None:
     validate_identifier(edge_id, "edge.id")
     validate_identifier(source_id, "edge.source_id")
@@ -183,14 +184,13 @@ def validate_edge_fields(
         rationale,
         "edge.rationale",
         max_length=MAX_LONG_TEXT_LENGTH,
+        allow_empty=allow_empty_rationale,
     )
-    source_ids = validate_identifier_list(
+    validate_identifier_list(
         sources,
         "edge.sources",
         max_items=MAX_SOURCES_PER_OBJECT,
     )
-    if not source_ids:
-        raise ValidationError("a dependency edge must reference at least one source")
 
 
 def validate_edge_transition(
@@ -210,6 +210,7 @@ def ensure_edge_addition_allowed(document: GraphDocument, candidate: DependencyE
         target_id=candidate.target_id,
         rationale=candidate.rationale,
         sources=candidate.sources,
+        allow_empty_rationale=candidate.created_by == "manual",
     )
     for edge in document.edges:
         if edge.source_id == candidate.source_id and edge.target_id == candidate.target_id:
@@ -280,6 +281,7 @@ def validate_graph_rules(document: GraphDocument) -> None:
             target_id=edge.target_id,
             rationale=edge.rationale,
             sources=edge.sources,
+            allow_empty_rationale=edge.created_by == "manual",
         )
         if edge.id in edge_ids:
             raise ValidationError(f"duplicate edge ID {edge.id}")

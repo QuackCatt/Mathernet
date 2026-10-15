@@ -28,9 +28,11 @@ class StubSynthesizer:
     def __init__(self, result=None):
         self.result = result
         self.calls = 0
+        self.map_context = None
 
-    def synthesize(self, query, sources):
+    def synthesize(self, query, sources, map_context=None):
         self.calls += 1
+        self.map_context = map_context
         if self.result is None:
             raise AssertionError("synthesis must not run")
         return self.result
@@ -148,6 +150,82 @@ class AgentTests(unittest.TestCase):
         self.assertTrue(result.created)
         self.assertEqual(len(result.edges), 1)
         self.assertEqual(result.edges[0].verification_status, VerificationStatus.AI_SUGGESTED)
+
+    def test_new_card_compares_every_formula_in_the_active_map(self):
+        self.repository.add_or_update_source(self.source.to_source_record())
+        source_record = self.source.to_source_record()
+        self.repository.add_formula(
+            formula_id="formula_distribution",
+            name="Distribution formula",
+            latex="X \\sim F",
+            aliases=["distribution"],
+            topic_tags=["probability", "distribution"],
+            ai_module=AIModule("summary", "explanation"),
+            sources=[source_record.id],
+        )
+        dependency = SynthesisDependency(
+            "Distribution formula",
+            EdgeRelation.SPECIAL_CASE,
+            "The requested distribution is a named special case.",
+            [],
+            local_formula_id="formula_distribution",
+            confidence=0.94,
+        )
+        synthesizer = StubSynthesizer(result_for("Special distribution", "X \\sim F_0", dependency))
+        agent = FormulaAgent(
+            self.repository,
+            StubSearchProvider([self.source]),
+            synthesizer,
+            ("Example University",),
+        )
+        map_context = {
+            "session_id": "map_test",
+            "formula_ids": ["formula_distribution"],
+            "formulas": [{"local_formula_id": "formula_distribution"}],
+            "relationships": [],
+        }
+        result = agent.learn("special distribution", map_context)
+        self.assertEqual(synthesizer.map_context, map_context)
+        self.assertEqual(len(result.edges), 1)
+        self.assertEqual(result.edges[0].source_id, "formula_distribution")
+        self.assertEqual(result.edges[0].relation, EdgeRelation.SPECIAL_CASE)
+
+    def test_known_distribution_chain_gets_a_relationship_guardrail(self):
+        self.repository.add_or_update_source(self.source.to_source_record())
+        source_record = self.source.to_source_record()
+        self.repository.add_formula(
+            formula_id="formula_expectation",
+            name="expectation",
+            latex=r"\mathbb{E}[X]",
+            aliases=["expected value"],
+            topic_tags=["probability", "distribution"],
+            ai_module=AIModule("summary", "explanation"),
+            sources=[source_record.id],
+        )
+        synthesizer = StubSynthesizer(result_for("variance", r"\operatorname{Var}(X)"))
+        agent = FormulaAgent(
+            self.repository,
+            StubSearchProvider([self.source]),
+            synthesizer,
+            ("Example University",),
+        )
+        result = agent.learn(
+            "variance",
+            {
+                "session_id": "map_distribution",
+                "formula_ids": ["formula_expectation"],
+                "formulas": [
+                    {
+                        "local_formula_id": "formula_expectation",
+                        "name": "expectation",
+                    }
+                ],
+                "relationships": [],
+            },
+        )
+        self.assertEqual(len(result.edges), 1)
+        self.assertEqual(result.edges[0].source_id, "formula_expectation")
+        self.assertEqual(result.edges[0].relation, EdgeRelation.PREREQUISITE)
 
     def test_model_cannot_cite_an_unseen_url(self):
         dependency = SynthesisDependency(

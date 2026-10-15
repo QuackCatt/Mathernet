@@ -93,6 +93,33 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(confirmed.status, 200)
         self.assertTrue(confirmed.payload["accepted"])
 
+    def test_manual_edge_can_be_created_without_sources_and_deleted(self):
+        created = handle_api_request(
+            self.service,
+            "POST",
+            "/api/edges",
+            {
+                "source_id": "formula_taylor_series",
+                "target_id": "formula_complex_exponential",
+                "relation": "equivalent_form",
+                "rationale": "",
+                "source_ids": [],
+                "manual": True,
+            },
+        )
+        self.assertEqual(created.status, 201)
+        self.assertTrue(created.payload["accepted"])
+        self.assertEqual(created.payload["evidence_status"], "unverified")
+        deleted = handle_api_request(
+            self.service,
+            "DELETE",
+            f"/api/edges/{created.payload['id']}",
+            {"expected_updated_at": created.payload["updated_at"]},
+        )
+        self.assertEqual(deleted.status, 200)
+        self.assertTrue(deleted.payload["deleted"])
+        self.assertIn("delete", openapi_document()["paths"]["/api/edges/{edge_id}"])
+
     def test_unknown_fields_and_routes_use_stable_errors(self):
         invalid = handle_api_request(
             self.service,

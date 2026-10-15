@@ -19,16 +19,22 @@ from .agent_skills import (
     FORMULA_DISCOVERY_SKILL,
     FORMULA_INTRODUCTION_SCHEMA,
     FORMULA_INTRODUCTION_SKILL,
+    RELATIONSHIP_DEEP_DIVE_SKILL,
+    RELATIONSHIP_VALIDATION_SCHEMA,
+    RELATIONSHIP_VALIDATION_SKILL,
     FormulaDiscovery,
     build_formula_chat_prompt,
     build_formula_deep_dive_prompt,
     build_formula_discovery_prompt,
     build_formula_introduction_prompt,
     build_formula_synthesis_prompt,
+    build_relationship_deep_dive_prompt,
+    build_relationship_validation_prompt,
     load_agent_skill,
     parse_formula_deep_dive,
     parse_formula_discovery,
     parse_formula_introduction,
+    parse_relationship_validation,
 )
 from .errors import RetrievalError, SynthesisError, ValidationError
 from .http_client import open_url
@@ -207,7 +213,12 @@ class ProviderGateway:
         )
         return parse_formula_discovery(raw)
 
-    def synthesize(self, query: str, sources: list[SearchResult]) -> SynthesisResult:
+    def synthesize(
+        self,
+        query: str,
+        sources: list[SearchResult],
+        map_context: dict[str, Any] | None = None,
+    ) -> SynthesisResult:
         self._require_ai()
         source_payload = [
             {"title": s.title, "url": s.url, "publisher": s.publisher, "excerpt": s.excerpt}
@@ -217,12 +228,18 @@ class ProviderGateway:
         prompt = json.dumps({
             "formula_request": query,
             "sources": source_payload,
+            "active_map": map_context or {
+                "session_id": "",
+                "formula_ids": [],
+                "formulas": [],
+                "relationships": [],
+            },
             "mode": "provider_native_answer" if not source_payload else "source_bounded_answer",
             "output": {
                 "name": "string", "latex": "string", "aliases": ["string"], "topic_tags": ["string"],
                 "ai_module": {"summary": "string", "explanation": "string", "examples": ["string"], "derivation_steps": ["string"]},
                 "sources": [{"title": "string", "url": "string", "publisher": "string", "excerpt": "string"}],
-                "dependencies": [{"prerequisite_name": "string", "relation": "prerequisite|derivation_basis|special_case|generalization|equivalent_form", "rationale": "string", "source_urls": ["string"]}],
+                "dependencies": [{"prerequisite_name": "string", "local_formula_id": "string", "relation": "prerequisite|derivation_basis|special_case|generalization|equivalent_form", "rationale": "string", "confidence": 0.0, "source_urls": ["string"]}],
                 "warnings": ["string"],
             },
             "response_schema": SYNTHESIS_SCHEMA,
@@ -242,6 +259,32 @@ class ProviderGateway:
             json_schema=FORMULA_DEEP_DIVE_SCHEMA,
         )
         return parse_formula_deep_dive(_extract_json(raw))
+
+    def deep_dive_relationship(
+        self,
+        relationship: dict[str, Any],
+        sources: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        self._require_ai()
+        raw = self._request(
+            f"{RELATIONSHIP_DEEP_DIVE_SKILL}\n\n{load_agent_skill('relationship_deep_dive')}",
+            build_relationship_deep_dive_prompt(relationship, sources),
+            json_schema=FORMULA_DEEP_DIVE_SCHEMA,
+        )
+        return parse_formula_deep_dive(_extract_json(raw))
+
+    def validate_relationship(
+        self,
+        relationship: dict[str, Any],
+        sources: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        self._require_ai()
+        raw = self._request(
+            f"{RELATIONSHIP_VALIDATION_SKILL}\n\n{load_agent_skill('relationship_deep_dive')}",
+            build_relationship_validation_prompt(relationship, sources),
+            json_schema=RELATIONSHIP_VALIDATION_SCHEMA,
+        )
+        return parse_relationship_validation(_extract_json(raw))
 
     def introduce(
         self,
@@ -475,11 +518,13 @@ SYNTHESIS_SCHEMA = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["prerequisite_name", "relation", "rationale", "source_urls"],
+                "required": ["prerequisite_name", "local_formula_id", "relation", "rationale", "confidence", "source_urls"],
                 "properties": {
                     "prerequisite_name": {"type": "string"},
+                    "local_formula_id": {"type": "string"},
                     "relation": {"type": "string", "enum": ["prerequisite", "derivation_basis", "special_case", "generalization", "equivalent_form"]},
                     "rationale": {"type": "string"},
+                    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
                     "source_urls": {"type": "array", "items": {"type": "string"}},
                 },
             },

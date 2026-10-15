@@ -98,6 +98,24 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(card["formula"]["ai_module"], original_ai)
         self.assertEqual(card["formula"]["user_module"]["notes"], "My reflection")
 
+    def test_manual_edge_is_user_verified_and_can_be_deleted(self):
+        created = self.service.add_edge(
+            source_ref=self.first.id,
+            target_ref=self.second.id,
+            relation="special_case",
+            rationale="Manually linked mathematical relationship.",
+            source_ids=[],
+            manual=True,
+        )
+        self.assertTrue(created["accepted"])
+        self.assertFalse(created["requires_user_confirmation"])
+        self.assertEqual(created["evidence_status"], "unverified")
+        self.assertFalse(created["confirmed_by_evidence"])
+        deleted = self.service.delete_edge(created["id"])
+        self.assertTrue(deleted["deleted"])
+        with self.assertRaises(Exception):
+            self.service.get_edge_payload(created["id"])
+
 
 if __name__ == "__main__":
     unittest.main()

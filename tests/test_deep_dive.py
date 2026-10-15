@@ -18,7 +18,19 @@ ROOT = Path(__file__).resolve().parents[1]
 class FakeDeepDiveGateway:
     def __init__(self):
         self.deep_dive_calls = []
+        self.relationship_calls = []
+        self.relationship_validation_calls = []
         self.chat_calls = []
+        self.relationship_sources = [
+            {
+                "title": "Relationship reference",
+                "url": "https://example.edu/relationship",
+                "publisher": "Example University",
+            }
+        ]
+        self.relationship_validation_sources = list(self.relationship_sources)
+        self.relationship_explanation_reasonable = True
+        self.relationship_web_supported = True
 
     def deep_dive(self, formula, sources):
         self.deep_dive_calls.append((formula, sources))
@@ -54,6 +66,29 @@ class FakeDeepDiveGateway:
     def chat(self, formula, deep_dive, messages):
         self.chat_calls.append((formula, deep_dive, messages))
         return "The key idea is $x=1$."
+
+    def deep_dive_relationship(self, relationship, sources):
+        self.relationship_calls.append((relationship, sources))
+        return {
+            "title": "Why these formulas connect",
+            "article": {
+                "introduction": "This relationship links two equivalent views of the same idea.",
+                "sections": [],
+            },
+            "sources": list(self.relationship_sources),
+            "warnings": [],
+        }
+
+    def validate_relationship(self, relationship, sources):
+        self.relationship_validation_calls.append((relationship, sources))
+        return {
+            "explanation_is_reasonable": self.relationship_explanation_reasonable,
+            "web_supported": self.relationship_web_supported,
+            "assessment": "The relationship was checked against the stated explanation.",
+            "sources": list(self.relationship_validation_sources)
+            if self.relationship_web_supported
+            else [],
+        }
 
 
 class DeepDiveTests(unittest.TestCase):
@@ -198,6 +233,97 @@ class DeepDiveTests(unittest.TestCase):
         with self.assertRaises(NotFoundError):
             self.sessions.get("formula_euler_identity", created["id"])
 
+    def test_relationship_sessions_explain_the_saved_relation_and_continue_in_chat(self):
+        created = handle_api_request(
+            self.service,
+            "POST",
+            "/api/edges/edge_complex_to_euler/deep-dive/sessions",
+            {},
+        )
+        self.assertEqual(created.status, 201)
+        self.assertIn("relationship links", created.payload["article"]["introduction"])
+        relationship = self.gateway.relationship_calls[0][0]
+        self.assertEqual(relationship["relation"], "prerequisite")
+        self.assertEqual(relationship["source_formula"]["id"], "formula_complex_exponential")
+
+        chat = handle_api_request(
+            self.service,
+            "POST",
+            f"/api/edges/edge_complex_to_euler/deep-dive/sessions/{created.payload['id']}/chat",
+            {"message": "Why are these equivalent views?"},
+        )
+        self.assertEqual(chat.status, 200)
+        self.assertEqual(len(chat.payload["session"]["messages"]), 2)
+        self.assertEqual(self.gateway.chat_calls[-1][0]["id"], "edge_complex_to_euler")
+
+    def test_manual_relationship_without_web_support_shows_the_saved_note(self):
+        self.gateway.relationship_sources = []
+        self.gateway.relationship_validation_sources = []
+        self.gateway.relationship_web_supported = False
+        edge = self.service.add_edge(
+            source_ref="formula_taylor_series",
+            target_ref="formula_complex_exponential",
+            relation="derivation_basis",
+            rationale="The Taylor expansion is my chosen route to the complex exponential.",
+            source_ids=[],
+            manual=True,
+        )
+        created = handle_api_request(
+            self.service,
+            "POST",
+            f"/api/edges/{edge['id']}/deep-dive/sessions",
+            {},
+        )
+        self.assertEqual(created.status, 201)
+        self.assertEqual(
+            created.payload["article"]["introduction"],
+            "The Taylor expansion is my chosen route to the complex exponential.",
+        )
+        self.assertEqual(created.payload["sources"], [])
+        self.assertIn("only your explanation", created.payload["warnings"][0])
+
+    def test_unexplained_manual_relationship_without_support_is_unverified(self):
+        self.gateway.relationship_sources = []
+        self.gateway.relationship_validation_sources = []
+        self.gateway.relationship_explanation_reasonable = False
+        self.gateway.relationship_web_supported = False
+        edge = self.service.add_edge(
+            source_ref="formula_taylor_series",
+            target_ref="formula_complex_exponential",
+            relation="derivation_basis",
+            rationale="",
+            source_ids=[],
+            manual=True,
+        )
+        self.assertEqual(edge["evidence_status"], "unverified")
+        self.assertFalse(edge["confirmed_by_evidence"])
+
+    def test_manual_relationship_with_web_support_is_verified(self):
+        self.gateway.relationship_explanation_reasonable = False
+        self.gateway.relationship_web_supported = True
+        edge = self.service.add_edge(
+            source_ref="formula_taylor_series",
+            target_ref="formula_complex_exponential",
+            relation="derivation_basis",
+            rationale="",
+            source_ids=[],
+            manual=True,
+        )
+        self.assertEqual(edge["evidence_status"], "supported")
+        self.assertTrue(edge["confirmed_by_evidence"])
+        self.assertEqual(len(edge["sources"]), 1)
+
+    def test_edge_payload_preserves_manual_relationship_origin(self):
+        edge = self.service.add_edge(
+            source_ref="formula_taylor_series",
+            target_ref="formula_complex_exponential",
+            relation="derivation_basis",
+            rationale="A manually selected relationship.",
+            source_ids=[],
+            manual=True,
+        )
+        self.assertEqual(edge["created_by"], "manual")
+
     def test_openapi_exposes_deep_dive_session_routes(self):
         paths = openapi_document()["paths"]
         self.assertIn("/api/formulas/{formula_id}/deep-dive/sessions", paths)
@@ -206,6 +332,7 @@ class DeepDiveTests(unittest.TestCase):
             "/api/formulas/{formula_id}/deep-dive/sessions/{session_id}/chat",
             paths,
         )
+        self.assertIn("/api/edges/{edge_id}/deep-dive/sessions", paths)
 
 
 if __name__ == "__main__":

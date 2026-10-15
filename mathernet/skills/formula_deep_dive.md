@@ -28,8 +28,9 @@ Turn one formula into a calm, accurate, long-form exploration for an independent
 
 ## Session behavior
 
-- The initial deep dive is generated once for a session and is preserved as the session's opening article.
+- Mathernet generates one initial deep dive automatically when no saved exploration exists.
+- The initial deep dive is preserved as the opening article.
 - Later conversation continues from that article and the preceding session messages.
-- A newly created session must generate a fresh initial article rather than copying a previous session verbatim.
+- Continue within the saved conversation instead of asking the learner to create another session.
 - If research is unavailable or uncertain, say so inside the article or warning fields instead of presenting speculation as fact.
 

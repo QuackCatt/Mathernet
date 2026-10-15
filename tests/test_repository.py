@@ -2,7 +2,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mathernet.models import AIModule, EdgeRelation, FormulaStatus, SourceRecord, VerificationStatus
+from mathernet.models import (
+    AIModule,
+    EdgeEvidence,
+    EdgeRelation,
+    FormulaStatus,
+    SourceRecord,
+    VerificationStatus,
+)
 from mathernet.repository import GraphRepository
 
 
@@ -63,18 +70,38 @@ class RepositoryTests(unittest.TestCase):
         rejected = self.repository.reject_edge("edge_a")
         self.assertEqual(rejected.verification_status, VerificationStatus.REJECTED)
 
-    def test_edge_requires_a_source(self):
+    def test_manual_edge_can_be_created_without_a_source(self):
         self.add_formula("formula_a", "Prerequisite", "pre")
         self.add_formula("formula_b", "Target", "target")
-        with self.assertRaises(Exception):
-            self.repository.add_edge(
-                edge_id="edge_unsupported",
-                source_id="formula_a",
-                target_id="formula_b",
-                relation=EdgeRelation.PREREQUISITE,
-                rationale="unsupported",
-                sources=[],
-            )
+        edge = self.repository.add_edge(
+            edge_id="edge_manual",
+            source_id="formula_a",
+            target_id="formula_b",
+            relation=EdgeRelation.PREREQUISITE,
+            rationale="",
+            sources=[],
+            manual=True,
+        )
+        self.assertEqual(edge.verification_status, VerificationStatus.USER_VERIFIED)
+        self.assertEqual(edge.evidence_status, EdgeEvidence.UNVERIFIED)
+        self.assertEqual(edge.sources, [])
+
+    def test_delete_edge_removes_only_that_relationship(self):
+        first = self.add_formula("formula_a", "Prerequisite", "pre")
+        second = self.add_formula("formula_b", "Target", "target")
+        self.repository.add_edge(
+            edge_id="edge_remove",
+            source_id=first.id,
+            target_id=second.id,
+            relation=EdgeRelation.PREREQUISITE,
+            rationale="Selected relationship.",
+            sources=[],
+            manual=True,
+        )
+        deleted = self.repository.delete_edge("edge_remove")
+        self.repository.save()
+        self.assertEqual(deleted.id, "edge_remove")
+        self.assertEqual(self.repository.document.edges, [])
 
     def test_rejected_edge_can_be_proposed_again_without_id_collision(self):
         self.add_formula("formula_a", "Prerequisite", "pre")

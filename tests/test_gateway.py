@@ -181,6 +181,50 @@ class GatewayTests(unittest.TestCase):
         self.assertIn("110-150 words", request.system_prompt)
         self.assertIn("Required JSON schema:", request.system_prompt)
 
+    def test_relationship_validation_uses_web_research_schema(self):
+        captured_request = {}
+
+        class FakeAdapter:
+            def complete(self, request):
+                captured_request["request"] = request
+                return ProviderResponse(
+                    text=json.dumps({
+                        "explanation_is_reasonable": False,
+                        "web_supported": True,
+                        "assessment": "Independent references support this relationship.",
+                        "sources": [{
+                            "title": "Relationship reference",
+                            "url": "https://example.edu/relationship",
+                            "publisher": "Example University",
+                            "excerpt": "A reference supporting the connection.",
+                        }],
+                    }),
+                    raw={},
+                )
+
+        gateway = ProviderGateway(
+            GatewayConfig(provider="openrouter", api_key="test-key", model="openai/gpt-4o-mini")
+        )
+        with patch("mathernet.gateway.adapter_for_config", return_value=FakeAdapter()):
+            validation = gateway.validate_relationship(
+                {
+                    "source_formula": {"id": "formula_a", "name": "A"},
+                    "target_formula": {"id": "formula_b", "name": "B"},
+                    "relation": "prerequisite",
+                    "rationale": "",
+                    "created_by": "manual",
+                },
+                [],
+            )
+
+        request = captured_request["request"]
+        self.assertFalse(validation["explanation_is_reasonable"])
+        self.assertTrue(validation["web_supported"])
+        self.assertEqual(validation["sources"][0]["url"], "https://example.edu/relationship")
+        self.assertIn("built-in web search when available", request.system_prompt)
+        self.assertIn('"explanation_is_reasonable"', request.system_prompt)
+        self.assertIn("Required JSON schema:", request.system_prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

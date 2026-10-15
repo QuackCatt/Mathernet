@@ -15,10 +15,13 @@ from .gateway import GatewayConfig, GatewayStore, ProviderGateway, SearchGateway
 from .map_sessions import MapSessionStore
 from .models import (
     DependencyEdge,
+    EdgeEvidence,
     EdgeRelation,
     FormulaNode,
     FormulaStatus,
+    SourceRecord,
     VerificationStatus,
+    utc_now,
 )
 from .normalization import formula_key, normalize_text
 from .providers import fetch_provider_models, provider_catalog
@@ -33,10 +36,16 @@ from .rules import (
 
 
 class LearningAgent(Protocol):
-    def learn(self, query: str) -> LearnResult: ...
+    def learn(self, query: str, map_context: dict[str, Any] | None = None) -> LearnResult: ...
 
 
 class DeepDiveGateway(Protocol):
+    def validate_relationship(
+        self,
+        relationship: dict[str, Any],
+        sources: list[dict[str, Any]],
+    ) -> dict[str, Any]: ...
+
     def introduce(
         self,
         formula: dict[str, Any],
@@ -46,6 +55,12 @@ class DeepDiveGateway(Protocol):
     def deep_dive(
         self,
         formula: dict[str, Any],
+        sources: list[dict[str, Any]],
+    ) -> dict[str, Any]: ...
+
+    def deep_dive_relationship(
+        self,
+        relationship: dict[str, Any],
         sources: list[dict[str, Any]],
     ) -> dict[str, Any]: ...
 
@@ -376,11 +391,24 @@ class MathernetService:
         rationale: str,
         source_ids: list[str],
         edge_id: str | None = None,
+        manual: bool = False,
     ) -> dict[str, Any]:
         if not isinstance(source_ids, list):
             raise ValidationError("source_ids must be an array")
         source = self.resolve_formula(source_ref)
         target = self.resolve_formula(target_ref)
+        parsed_relation = self._parse_relation(relation)
+        evidence_status = (
+            EdgeEvidence.SUPPORTED if source_ids else EdgeEvidence.UNVERIFIED
+        )
+        if manual:
+            source_ids, evidence_status = self._validate_manual_relationship(
+                source=source,
+                target=target,
+                relation=parsed_relation,
+                rationale=rationale,
+                source_ids=source_ids,
+            )
         new_edge_id = self.repository.unique_edge_id(
             edge_id or self._edge_id_base(source.id, target.id)
         )
@@ -388,9 +416,11 @@ class MathernetService:
             edge_id=new_edge_id,
             source_id=source.id,
             target_id=target.id,
-            relation=self._parse_relation(relation),
+            relation=parsed_relation,
             rationale=rationale,
             sources=source_ids,
+            manual=manual,
+            evidence_status=evidence_status,
         )
         self.repository.save()
         return self._edge_payload(edge)
@@ -439,11 +469,38 @@ class MathernetService:
         self.repository.save()
         return self._edge_payload(updated)
 
-    def learn(self, query: str) -> dict[str, Any]:
+    def delete_edge(
+        self,
+        edge_id: str,
+        *,
+        expected_updated_at: str | None = None,
+    ) -> dict[str, Any]:
+        edge = self.repository.get_edge(edge_id)
+        self._ensure_edge_version(edge, expected_updated_at)
+        self.repository.delete_edge(edge.id)
+        self.repository.save()
+        return {
+            "deleted": True,
+            "edge_id": edge.id,
+            "source_id": edge.source_id,
+            "target_id": edge.target_id,
+            "revision": self.revision,
+        }
+
+    def learn(
+        self,
+        query: str,
+        *,
+        map_session_id: str | None = None,
+    ) -> dict[str, Any]:
         query = validate_bounded_text(query, "query", max_length=MAX_QUERY_LENGTH)
         if self.agent is None:
             raise ValidationError("online learning is not configured for this service")
-        result = self.agent.learn(query)
+        map_context = self._learning_map_context(map_session_id)
+        if map_session_id:
+            result = self.agent.learn(query, map_context)
+        else:
+            result = self.agent.learn(query)
         return {
             "created": result.created,
             "formula": self._formula_card(result.node),
@@ -451,6 +508,47 @@ class MathernetService:
             "unresolved_dependencies": result.unresolved_dependencies,
             "warnings": result.warnings,
             "revision": self.revision,
+        }
+
+    def _learning_map_context(self, map_session_id: str | None) -> dict[str, Any]:
+        if not map_session_id:
+            return {"session_id": "", "formula_ids": [], "formulas": [], "relationships": []}
+        session = self.map_sessions.get(map_session_id)
+        formula_ids = [
+            formula_id
+            for formula_id in session.get("formula_ids", [])
+            if any(node.id == formula_id for node in self.repository.document.nodes)
+        ]
+        formula_id_set = set(formula_ids)
+        formulas = []
+        for formula_id in formula_ids:
+            node = self.repository.get_formula(formula_id)
+            formulas.append(
+                {
+                    "local_formula_id": node.id,
+                    "name": node.name,
+                    "latex": node.latex,
+                    "topic_tags": node.topic_tags,
+                    "summary": node.ai_module.summary,
+                }
+            )
+        relationships = [
+            {
+                "local_formula_id": edge.source_id,
+                "related_formula_id": edge.target_id,
+                "relation": edge.relation.value,
+                "rationale": edge.rationale,
+            }
+            for edge in self.repository.document.edges
+            if edge.verification_status in ACTIVE_EDGE_STATUSES
+            and edge.source_id in formula_id_set
+            and edge.target_id in formula_id_set
+        ]
+        return {
+            "session_id": map_session_id,
+            "formula_ids": formula_ids,
+            "formulas": formulas,
+            "relationships": relationships,
         }
 
     def list_map_sessions(self) -> dict[str, Any]:
@@ -591,6 +689,110 @@ class MathernetService:
         session = self.deep_dive_sessions.append_message(node.id, session_id, "assistant", reply)
         return {"reply": reply, "session": session}
 
+    def list_relationship_deep_dive_sessions(self, edge_id: str) -> list[dict[str, Any]]:
+        self.repository.get_edge(edge_id)
+        return self.deep_dive_sessions.list(self._relationship_session_key(edge_id))
+
+    def create_relationship_deep_dive_session(self, edge_id: str) -> dict[str, Any]:
+        edge = self.repository.get_edge(edge_id)
+        relationship = self._relationship_context(edge)
+        sources = self._relationship_sources(edge)
+        gateway = self._require_ai_gateway()
+        try:
+            generated = gateway.deep_dive_relationship(relationship, sources)
+        except SynthesisError:
+            if edge.created_by != "manual":
+                raise
+            generated = self._manual_relationship_note(edge)
+        manual_without_support = (
+            edge.created_by == "manual"
+            and not generated.get("sources")
+            and not edge.sources
+        )
+        if manual_without_support:
+            generated = self._manual_relationship_note(edge)
+        merged_sources = (
+            []
+            if manual_without_support
+            else self._merge_sources(sources, generated.get("sources", []))
+        )
+        return self.deep_dive_sessions.create(
+            self._relationship_session_key(edge.id),
+            {
+                "title": generated["title"],
+                "article": generated["article"],
+                "sources": merged_sources,
+                "warnings": generated["warnings"],
+            },
+        )
+
+    def get_relationship_deep_dive_session(
+        self,
+        edge_id: str,
+        session_id: str,
+    ) -> dict[str, Any]:
+        self.repository.get_edge(edge_id)
+        return self.deep_dive_sessions.get(
+            self._relationship_session_key(edge_id),
+            session_id,
+        )
+
+    def delete_relationship_deep_dive_session(
+        self,
+        edge_id: str,
+        session_id: str,
+    ) -> dict[str, Any]:
+        self.repository.get_edge(edge_id)
+        self.deep_dive_sessions.delete(
+            self._relationship_session_key(edge_id),
+            session_id,
+        )
+        return {"deleted": True, "edge_id": edge_id, "session_id": session_id}
+
+    def chat_relationship_deep_dive(
+        self,
+        edge_id: str,
+        session_id: str,
+        message: str,
+    ) -> dict[str, Any]:
+        edge = self.repository.get_edge(edge_id)
+        message = validate_bounded_text(
+            message,
+            "message",
+            max_length=MAX_SESSION_MESSAGE_LENGTH,
+        )
+        owner_id = self._relationship_session_key(edge.id)
+        session = self.deep_dive_sessions.get(owner_id, session_id)
+        messages = list(session.get("messages", []))
+        messages.append({"role": "user", "content": message})
+        reply = self._require_ai_gateway().chat(
+            self._relationship_context(edge),
+            {
+                "title": session["title"],
+                "article": session["article"],
+                "sources": session["sources"],
+            },
+            messages[-20:],
+        )
+        reply = validate_bounded_text(
+            reply,
+            "reply",
+            max_length=MAX_SESSION_REPLY_LENGTH,
+        )
+        session = self.deep_dive_sessions.append_message(
+            owner_id,
+            session_id,
+            "user",
+            message,
+        )
+        session = self.deep_dive_sessions.append_message(
+            owner_id,
+            session_id,
+            "assistant",
+            reply,
+        )
+        return {"reply": reply, "session": session}
+
     def export_graph(self) -> dict[str, Any]:
         return self.repository.document.to_dict()
 
@@ -674,6 +876,56 @@ class MathernetService:
             },
         }
 
+    def _relationship_context(self, edge: DependencyEdge) -> dict[str, Any]:
+        source = self.repository.get_formula(edge.source_id)
+        target = self.repository.get_formula(edge.target_id)
+        return {
+            "id": edge.id,
+            "source_formula": self._formula_context(source),
+            "target_formula": self._formula_context(target),
+            "relation": edge.relation.value,
+            "rationale": edge.rationale,
+            "created_by": edge.created_by,
+            "verification_status": edge.verification_status.value,
+            "evidence_status": edge.evidence_status.value,
+        }
+
+    def _relationship_sources(self, edge: DependencyEdge) -> list[dict[str, Any]]:
+        source_ids = list(edge.sources)
+        for formula_id in (edge.source_id, edge.target_id):
+            node = self.repository.get_formula(formula_id)
+            source_ids.extend(node.sources)
+        sources = []
+        seen = set()
+        for source_id in source_ids:
+            if source_id in seen:
+                continue
+            seen.add(source_id)
+            sources.append(self.repository.get_source(source_id).to_dict())
+        return sources
+
+    @staticmethod
+    def _relationship_session_key(edge_id: str) -> str:
+        return f"relationship:{edge_id}"
+
+    @staticmethod
+    def _manual_relationship_note(edge: DependencyEdge) -> dict[str, Any]:
+        introduction = edge.rationale or (
+            "No explanation was provided for this relationship, and no independent "
+            "web source was found."
+        )
+        return {
+            "title": "Your relationship note",
+            "article": {
+                "introduction": introduction,
+                "sections": [],
+            },
+            "sources": [],
+            "warnings": [
+                "No independent web source was found, so this session preserves only your explanation."
+            ],
+        }
+
     def _require_ai_gateway(self) -> DeepDiveGateway:
         if self.ai_gateway is not None:
             return self.ai_gateway
@@ -682,6 +934,94 @@ class MathernetService:
             raise ValidationError("AI provider is not configured")
         self.ai_gateway = ProviderGateway(config)
         return self.ai_gateway
+
+    def _validate_manual_relationship(
+        self,
+        *,
+        source: FormulaNode,
+        target: FormulaNode,
+        relation: EdgeRelation,
+        rationale: str,
+        source_ids: list[str],
+    ) -> tuple[list[str], EdgeEvidence]:
+        merged_source_ids = list(dict.fromkeys(source_ids))
+        fallback = (
+            EdgeEvidence.SUPPORTED
+            if merged_source_ids
+            else EdgeEvidence.UNVERIFIED
+        )
+        gateway = self.ai_gateway
+        if gateway is None:
+            try:
+                gateway = self._require_ai_gateway()
+            except (SynthesisError, ValidationError):
+                gateway = None
+        validate_relationship = getattr(gateway, "validate_relationship", None)
+        if not callable(validate_relationship):
+            return merged_source_ids, fallback
+
+        relationship = {
+            "source_formula": self._formula_context(source),
+            "target_formula": self._formula_context(target),
+            "relation": relation.value,
+            "rationale": rationale,
+            "created_by": "manual",
+        }
+        try:
+            validation = validate_relationship(relationship, [])
+        except (SynthesisError, ValidationError):
+            return merged_source_ids, fallback
+        if not isinstance(validation, dict):
+            return merged_source_ids, fallback
+
+        validation_sources = validation.get("sources", [])
+        stored_sources = (
+            self._store_relationship_validation_sources(validation_sources)
+            if validation.get("web_supported") or validation_sources
+            else []
+        )
+        merged_source_ids.extend(source.id for source in stored_sources)
+        merged_source_ids = list(dict.fromkeys(merged_source_ids))
+        supported = (
+            bool(merged_source_ids)
+            or bool(validation.get("explanation_is_reasonable"))
+            or bool(validation.get("web_supported"))
+        )
+        return (
+            merged_source_ids,
+            EdgeEvidence.SUPPORTED if supported else EdgeEvidence.UNVERIFIED,
+        )
+
+    def _store_relationship_validation_sources(
+        self,
+        sources: Any,
+    ) -> list[SourceRecord]:
+        if not isinstance(sources, list):
+            return []
+        records = []
+        for item in sources[:10]:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "").strip()
+            url = str(item.get("url") or "").strip()
+            publisher = str(item.get("publisher") or "").strip()
+            excerpt = str(item.get("excerpt") or "").strip()
+            if not title or not url or not publisher:
+                continue
+            source_id = f"source_{hashlib.sha256(url.encode()).hexdigest()[:16]}"
+            records.append(
+                self.repository.add_or_update_source(
+                    SourceRecord(
+                        id=source_id,
+                        title=title[:300],
+                        url=url,
+                        publisher=publisher[:120],
+                        retrieved_at=utc_now(),
+                        excerpt=(excerpt or "Relationship validation reference.")[:2_000],
+                    )
+                )
+            )
+        return records
 
     @staticmethod
     def _merge_sources(
@@ -744,6 +1084,9 @@ class MathernetService:
                 for source_id in edge.sources
             ],
             "verification_status": edge.verification_status.value,
+            "created_by": edge.created_by,
+            "evidence_status": edge.evidence_status.value,
+            "confirmed_by_evidence": edge.evidence_status == EdgeEvidence.SUPPORTED,
             "requires_user_confirmation": (
                 edge.verification_status == VerificationStatus.AI_SUGGESTED
             ),

@@ -18,6 +18,8 @@ class SynthesisDependency:
     relation: EdgeRelation
     rationale: str
     source_urls: list[str]
+    local_formula_id: str = ""
+    confidence: float = 0.0
 
 
 @dataclass(slots=True)
@@ -33,13 +35,23 @@ class SynthesisResult:
 
 
 class Synthesizer(Protocol):
-    def synthesize(self, query: str, sources: list[SearchResult]) -> SynthesisResult: ...
+    def synthesize(
+        self,
+        query: str,
+        sources: list[SearchResult],
+        map_context: dict[str, Any] | None = None,
+    ) -> SynthesisResult: ...
 
 
 class RuleBasedSynthesizer:
     """Offline-safe synthesizer that never invents relations or derivations."""
 
-    def synthesize(self, query: str, sources: list[SearchResult]) -> SynthesisResult:
+    def synthesize(
+        self,
+        query: str,
+        sources: list[SearchResult],
+        map_context: dict[str, Any] | None = None,
+    ) -> SynthesisResult:
         if not sources:
             raise SynthesisError("at least one reliable source is required")
         source_titles = ", ".join(source.title for source in sources)
@@ -78,7 +90,12 @@ class OpenAIResponsesSynthesizer:
         self.timeout_seconds = timeout_seconds
         self.endpoint = endpoint
 
-    def synthesize(self, query: str, sources: list[SearchResult]) -> SynthesisResult:
+    def synthesize(
+        self,
+        query: str,
+        sources: list[SearchResult],
+        map_context: dict[str, Any] | None = None,
+    ) -> SynthesisResult:
         source_payload = [
             {
                 "title": source.title,
@@ -90,18 +107,19 @@ class OpenAIResponsesSynthesizer:
         ]
         system_prompt = (
             "You are Mathernet, a study-only formula learning assistant. "
-            "Use only the supplied source material. Never invent a formula, derivation, source, or dependency. "
-            "Propose a dependency only when the supplied material supports it, and cite only supplied URLs. "
+            "Use only supplied source material for factual claims. Never invent a formula, derivation, source, or citation. "
+            "Compare the request with every active-map formula and preserve every meaningful mathematical relationship. "
             "Do not solve exams or homework. Return only valid JSON matching the requested schema."
         )
         user_prompt = json.dumps(
             {
                 "formula_request": query,
                 "sources": source_payload,
+                "active_map": map_context or {},
                 "instructions": [
                     "Create a plain-language formula card.",
                     "Store canonical mathematics in latex.",
-                    "Keep every dependency directed from a prerequisite formula to the requested formula.",
+                    "Keep every dependency directed from the related formula to the requested formula.",
                     "Use relation values: prerequisite, derivation_basis, special_case, generalization, equivalent_form.",
                 ],
             },
@@ -132,11 +150,20 @@ class OpenAIResponsesSynthesizer:
                     "items": {
                         "type": "object",
                         "additionalProperties": False,
-                        "required": ["prerequisite_name", "relation", "rationale", "source_urls"],
+                        "required": [
+                            "prerequisite_name",
+                            "local_formula_id",
+                            "relation",
+                            "rationale",
+                            "confidence",
+                            "source_urls",
+                        ],
                         "properties": {
                             "prerequisite_name": {"type": "string"},
+                            "local_formula_id": {"type": "string"},
                             "relation": {"type": "string", "enum": [item.value for item in EdgeRelation]},
                             "rationale": {"type": "string"},
+                            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
                             "source_urls": {"type": "array", "items": {"type": "string"}},
                         },
                     },
@@ -200,10 +227,16 @@ def parse_synthesis_result(raw: str) -> SynthesisResult:
         ai_data = data["ai_module"]
         dependencies = [
             SynthesisDependency(
-                prerequisite_name=str(item["prerequisite_name"]),
+                prerequisite_name=str(
+                    item.get("prerequisite_name")
+                    or item.get("local_formula_name")
+                    or item.get("local_formula_id")
+                ),
                 relation=EdgeRelation(item["relation"]),
                 rationale=str(item["rationale"]),
                 source_urls=[str(url) for url in item.get("source_urls", [])],
+                local_formula_id=str(item.get("local_formula_id", "")),
+                confidence=min(1.0, max(0.0, float(item.get("confidence", 0.0)))),
             )
             for item in data.get("dependencies", [])
         ]
@@ -279,6 +312,10 @@ def _normalize_synthesis_payload(data: Any) -> dict[str, Any]:
         "sourceUrls": "source_urls",
         "prerequisite_name": "prerequisite_name",
         "prerequisiteName": "prerequisite_name",
+        "local_formula_id": "local_formula_id",
+        "localFormulaId": "local_formula_id",
+        "local_formula_name": "local_formula_name",
+        "localFormulaName": "local_formula_name",
     }
     normalized = {aliases.get(key, key): value for key, value in current.items()}
     if "ai_module" not in normalized:

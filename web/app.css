@@ -795,6 +795,26 @@ h3 {
   gap: 8px;
 }
 
+.graph-cut-button {
+  color: var(--danger);
+}
+
+.graph-cut-button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--line));
+  background: var(--danger-soft);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.graph-inspect-button {
+  color: var(--signal);
+}
+
+.graph-inspect-button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--signal) 42%, var(--line));
+  background: color-mix(in srgb, var(--signal) 12%, var(--surface));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--signal) 12%, transparent);
+}
+
 .graph-tool-buttons {
   display: inline-flex;
   align-items: center;
@@ -825,6 +845,47 @@ h3 {
   cursor: grabbing;
 }
 
+.graph-canvas.is-cut-mode {
+  cursor: crosshair;
+}
+
+.graph-canvas.is-inspect-mode {
+  cursor: zoom-in;
+}
+
+.graph-tool-ghost {
+  position: absolute;
+  z-index: 8;
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--danger) 38%, var(--line));
+  border-radius: 50%;
+  background: var(--danger-soft);
+  color: var(--danger);
+  box-shadow: 0 12px 28px rgb(130 35 35 / 0.22);
+  pointer-events: none;
+  transform: translate(-50%, -50%) rotate(-8deg);
+}
+
+.graph-tool-ghost[hidden] {
+  display: none;
+}
+
+.graph-tool-ghost svg {
+  width: 19px;
+  height: 19px;
+}
+
+.graph-tool-ghost[data-mode="inspect"] {
+  border-color: color-mix(in srgb, var(--signal) 42%, var(--line));
+  background: color-mix(in srgb, var(--signal) 13%, var(--surface));
+  color: var(--signal);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--signal) 22%, transparent);
+  transform: translate(-50%, -50%) rotate(5deg);
+}
+
 .graph-ground {
   fill: var(--canvas);
 }
@@ -840,9 +901,27 @@ h3 {
     stroke-width var(--motion-base) var(--ease);
 }
 
-.graph-edge.pending {
-  stroke: var(--pending);
-  stroke-dasharray: 5 7;
+.graph-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 18;
+  stroke-linecap: round;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.graph-edge-hit:focus {
+  outline: none;
+}
+
+.graph-edge:focus {
+  outline: none;
+  stroke: var(--signal);
+  stroke-width: 3;
+}
+
+.graph-edge.is-unverified {
+  stroke-dasharray: 7 7;
 }
 
 .graph-edge.is-dimmed {
@@ -852,6 +931,22 @@ h3 {
 .graph-edge.is-active {
   stroke-width: 2.6;
   opacity: 1;
+}
+
+.graph-edge.is-cut-target {
+  stroke: var(--danger);
+  stroke-width: 4;
+  opacity: 1;
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--danger) 52%, transparent));
+  animation: edge-cut-pulse 720ms var(--ease) infinite alternate;
+}
+
+.graph-edge.is-inspect-target {
+  stroke: var(--signal);
+  stroke-width: 4;
+  opacity: 1;
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--signal) 52%, transparent));
+  animation: edge-inspect-pulse 720ms var(--ease) infinite alternate;
 }
 
 .graph-node {
@@ -871,6 +966,21 @@ h3 {
     r var(--motion-base) var(--ease);
 }
 
+.graph-node.is-merge-candidate .node-halo,
+.graph-node.is-merge-source .node-halo {
+  opacity: 1;
+}
+
+.graph-node.is-merge-candidate .node-halo {
+  fill: color-mix(in srgb, var(--signal) 24%, transparent);
+  stroke: var(--signal);
+  stroke-width: 1.5;
+}
+
+.graph-node.is-merge-source .node-surface {
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--signal) 48%, transparent));
+}
+
 .graph-node .node-surface {
   fill: var(--surface);
   stroke: color-mix(in srgb, var(--signal) 58%, var(--line-strong));
@@ -879,7 +989,8 @@ h3 {
     fill var(--motion-base) var(--ease),
     stroke var(--motion-base) var(--ease),
     stroke-width var(--motion-base) var(--ease),
-    filter var(--motion-base) var(--ease);
+    filter var(--motion-base) var(--ease),
+    r var(--motion-base) var(--ease);
 }
 
 .graph-node.status-learning .node-surface {
@@ -1492,7 +1603,7 @@ h3 {
 
 .deep-dive-shell {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   height: 100%;
   min-height: 0;
 }
@@ -1512,108 +1623,12 @@ h3 {
 }
 
 .deep-dive-heading h2 {
+  max-width: min(860px, 78vw);
   margin-bottom: 0;
-}
-
-.deep-session-new {
-  min-height: 38px;
-  padding: 8px 12px;
-}
-
-.deep-session-bar {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-height: 50px;
-  padding: 8px 22px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface-soft);
-}
-
-.deep-session-label {
-  flex: 0 0 auto;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.deep-session-list {
-  display: flex;
-  min-width: 0;
-  gap: 8px;
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-
-.deep-session-tab {
-  display: grid;
-  flex: 0 0 auto;
-  gap: 2px;
-  min-width: 132px;
-  max-width: 220px;
-  padding: 7px 10px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--surface);
-  color: var(--muted);
-  text-align: left;
-}
-
-.deep-session-tab:hover {
-  border-color: color-mix(in srgb, var(--signal) 35%, var(--line));
-}
-
-.deep-session-tab.is-active {
-  border-color: var(--signal);
-  background: var(--signal-soft);
-  color: var(--ink);
-}
-
-.deep-session-tab span,
-.deep-session-tab small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.deep-session-tab span {
-  font-size: 13px;
-  font-weight: 750;
-}
-
-.deep-session-tab small,
-.deep-session-empty {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.deep-session-empty {
-  margin: 0;
-}
-
-.deep-dive-formula-scroll {
-  min-width: 0;
-  max-width: min(760px, 68vw);
-  margin-top: 8px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: thin;
-}
-
-.deep-dive-formula {
-  width: max-content;
-  min-width: 100%;
-  margin: 0;
-  color: var(--muted);
   font-family: var(--font-display);
-  line-height: 1.5;
-  white-space: nowrap;
-}
-
-.deep-dive-formula .katex {
-  color: var(--ink);
-  font-size: 1.08em;
+  font-size: clamp(32px, 3.3vw, 48px);
+  line-height: 1.08;
+  letter-spacing: -0.035em;
 }
 
 .deep-dive-content {
@@ -1983,6 +1998,138 @@ h3 {
   gap: 10px;
 }
 
+.relationship-route {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin: 20px 22px 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--canvas) 72%, var(--surface));
+}
+
+.relationship-route > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.relationship-route span,
+.unlink-preview span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.relationship-route strong,
+.unlink-preview strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dialog-field {
+  display: grid;
+  gap: 7px;
+  margin: 16px 22px;
+}
+
+.dialog-field label {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dialog-field select,
+.dialog-field textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+.dialog-field select {
+  min-height: 42px;
+  padding: 0 11px;
+}
+
+.dialog-field textarea {
+  min-height: 88px;
+  padding: 10px 11px;
+  resize: vertical;
+}
+
+.dialog-field select:focus,
+.dialog-field textarea:focus {
+  border-color: var(--signal);
+  outline: 3px solid color-mix(in srgb, var(--signal) 15%, transparent);
+}
+
+.unlink-preview {
+  display: grid;
+  gap: 6px;
+  margin: 18px 22px;
+  padding: 15px;
+  border: 1px solid color-mix(in srgb, var(--danger) 22%, var(--line));
+  border-radius: 9px;
+  background: var(--danger-soft);
+}
+
+.relationship-explore-card {
+  display: grid;
+  gap: 13px;
+  margin: 18px 22px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--signal) 24%, var(--line));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--signal) 8%, var(--surface));
+}
+
+.relationship-explore-route {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.relationship-explore-route strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relationship-explore-route svg {
+  width: 18px;
+  height: 18px;
+  color: var(--signal);
+}
+
+.relationship-explore-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.relationship-explore-meta span {
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--signal) 22%, var(--line));
+  border-radius: 999px;
+  color: var(--signal);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.relationship-explore-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
 .provider-config {
   display: grid;
   grid-template-columns: 218px minmax(0, 1fr);
@@ -2074,20 +2221,36 @@ h3 {
 .provider-mark {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--surface);
-  color: var(--muted);
-  font-family: var(--font-display);
-  font-size: 13px;
-  font-weight: 700;
+  color: var(--ink);
 }
 
-.provider-mark-wide {
-  font-family: var(--font-ui);
-  font-size: 10px;
+.provider-glyph {
+  width: 21px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.provider-glyph-deepseek {
+  width: 30px;
+  height: 22px;
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+}
+
+.provider-glyph-wide {
+  width: 30px;
+  height: 24px;
+  stroke-width: 1.25;
+  stroke-linejoin: round;
 }
 
 .provider-name {
@@ -2834,6 +2997,43 @@ h3 {
   background: var(--canvas);
   color: var(--ink);
   text-align: center;
+}
+
+@keyframes edge-cut-pulse {
+  from {
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--danger) 38%, transparent));
+  }
+  to {
+    filter: drop-shadow(0 0 11px color-mix(in srgb, var(--danger) 62%, transparent));
+  }
+}
+
+@keyframes edge-inspect-pulse {
+  from {
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--signal) 38%, transparent));
+  }
+  to {
+    filter: drop-shadow(0 0 12px color-mix(in srgb, var(--signal) 64%, transparent));
+  }
+}
+
+@keyframes relationship-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #relationship-dialog[open],
+  #unlink-dialog[open],
+  #relationship-explore-dialog[open] {
+    animation: relationship-dialog-in 190ms var(--ease) both;
+  }
 }
 
 @media (max-width: 1180px) {

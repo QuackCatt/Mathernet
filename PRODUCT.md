@@ -18,7 +18,7 @@ University mathematics learners who want to understand formulas as connected ide
 - Organize formulas into independently named, pinnable, and deletable mind-map sessions.
 - See which formulas support or depend on the selected formula.
 - Read AI-generated formula explanations without confusing generated content with personal understanding.
-- Continue formula exploration in preserved deep-dive sessions, start a fresh generated session, or delete a saved session.
+- Continue formula exploration in a preserved deep-dive conversation generated on first use.
 - Record a private study note and learning status.
 - Inspect every source and edit or explicitly confirm AI-suggested dependency edges.
 - Resolve a formula through the configured AI provider, reuse an exact local match, and create a card only when none exists.

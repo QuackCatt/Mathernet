@@ -39,6 +39,11 @@ class VerificationStatus(StrEnum):
     UNSUPPORTED = "unsupported"
 
 
+class EdgeEvidence(StrEnum):
+    SUPPORTED = "supported"
+    UNVERIFIED = "unverified"
+
+
 class RefusalReason(StrEnum):
     ASSESSMENT = "assessment_request"
     NON_FORMULA = "non_formula_request"
@@ -57,6 +62,7 @@ def _ensure_object_shape(
     data: Any,
     context: str,
     required: tuple[str, ...],
+    optional: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValidationError(f"{context} must be an object")
@@ -65,7 +71,7 @@ def _ensure_object_shape(
         raise ValidationError(
             f"{context} is missing required fields: {', '.join(sorted(missing))}"
         )
-    unknown = data.keys() - set(required)
+    unknown = data.keys() - set(required) - set(optional)
     if unknown:
         raise ValidationError(
             f"{context} contains unknown fields: {', '.join(sorted(unknown))}"
@@ -251,11 +257,14 @@ class DependencyEdge:
     verification_status: VerificationStatus
     created_at: str = field(default_factory=utc_now)
     updated_at: str = field(default_factory=utc_now)
+    created_by: str = "ai"
+    evidence_status: EdgeEvidence = EdgeEvidence.UNVERIFIED
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["relation"] = self.relation.value
         data["verification_status"] = self.verification_status.value
+        data["evidence_status"] = self.evidence_status.value
         return data
 
     @classmethod
@@ -275,11 +284,15 @@ class DependencyEdge:
                 "created_at",
                 "updated_at",
             ),
+            optional=("created_by", "evidence_status"),
         )
         edge_id = _required_string(data, "id", context)
         source_id = _required_string(data, "source_id", context)
         target_id = _required_string(data, "target_id", context)
-        rationale = _required_string(data, "rationale", context)
+        rationale_value = data.get("rationale")
+        if not isinstance(rationale_value, str):
+            raise ValidationError(f"{context} {edge_id}.rationale must be a string")
+        rationale = rationale_value.strip()
         sources = _string_list(data, "sources", context)
         created_at = _required_timestamp(data, "created_at", context)
         updated_at = _required_timestamp(data, "updated_at", context)
@@ -293,6 +306,16 @@ class DependencyEdge:
             raise ValidationError(
                 f"{context} {edge_id}.verification_status is invalid"
             ) from error
+        evidence_value = data.get("evidence_status")
+        if evidence_value is None:
+            evidence = EdgeEvidence.SUPPORTED if sources else EdgeEvidence.UNVERIFIED
+        else:
+            try:
+                evidence = EdgeEvidence(evidence_value)
+            except (TypeError, ValueError) as error:
+                raise ValidationError(
+                    f"{context} {edge_id}.evidence_status is invalid"
+                ) from error
         return cls(
             id=edge_id,
             source_id=source_id,
@@ -303,6 +326,8 @@ class DependencyEdge:
             verification_status=status,
             created_at=created_at,
             updated_at=updated_at,
+            created_by=str(data.get("created_by") or "ai"),
+            evidence_status=evidence,
         )
 
 

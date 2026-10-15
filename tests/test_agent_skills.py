@@ -8,6 +8,7 @@ from mathernet.agent_skills import (
     FormulaDiscovery,
     load_agent_skill,
     parse_formula_discovery,
+    parse_relationship_validation,
 )
 from mathernet.errors import SynthesisError
 from mathernet.llm import SynthesisResult
@@ -82,7 +83,21 @@ class AgentSkillTests(unittest.TestCase):
         self.assertIn("Omit a topic instead of padding the article", skill)
         self.assertIn("single dollar delimiters", skill)
         self.assertIn("Never invent citations", skill)
-        self.assertIn("fresh initial article", skill)
+        self.assertIn("one initial deep dive automatically", skill)
+
+    def test_parses_relationship_validation_and_drops_invalid_sources(self):
+        parsed = parse_relationship_validation(json.dumps({
+            "explanation_is_reasonable": True,
+            "web_supported": False,
+            "assessment": "The explanation is mathematically coherent.",
+            "sources": [
+                {"title": "Valid", "url": "https://example.edu/a", "publisher": "Example", "excerpt": "Text"},
+                {"title": "Invalid", "url": "javascript:alert(1)", "publisher": "Example", "excerpt": "Text"},
+            ],
+        }))
+        self.assertTrue(parsed["explanation_is_reasonable"])
+        self.assertFalse(parsed["web_supported"])
+        self.assertEqual(len(parsed["sources"]), 1)
 
     def test_discovery_opens_an_existing_card_before_synthesis(self):
         existing = self.add_formula("formula_existing", "Existing formula", ["local alias"])

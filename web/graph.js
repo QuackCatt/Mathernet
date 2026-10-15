@@ -43,6 +43,12 @@
     return lines;
   }
 
+  const NODE_RADII = [8, 10, 12, 15, 18, 21, 24, 26, 28, 30];
+
+  function nodeRadiusForDegree(degree) {
+    return NODE_RADII[Math.min(NODE_RADII.length - 1, Math.max(0, degree))];
+  }
+
   class FormulaGraph {
     constructor() {
       this.stage = document.querySelector("#graph-stage");
@@ -58,6 +64,7 @@
       this.selectedId = null;
       this.hoveredId = null;
       this.onSelect = null;
+      this.onClearSelection = null;
       this.width = 900;
       this.height = 540;
       this.transform = { x: 0, y: 0, scale: 1 };
@@ -65,6 +72,18 @@
       this.simulationFrame = 0;
       this.draggedNode = null;
       this.dragMoved = false;
+      this.mergeCandidateId = null;
+      this.cutMode = false;
+      this.cutPointer = null;
+      this.cutEdgeId = null;
+      this.cutDragMoved = false;
+      this.inspectMode = false;
+      this.inspectPointer = null;
+      this.inspectEdgeId = null;
+      this.inspectDragMoved = false;
+      this.onCreateRelationship = null;
+      this.onCutRelationship = null;
+      this.onInspectRelationship = null;
       this.panStart = null;
       this.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -73,9 +92,23 @@
       this.resize();
     }
 
-    render(graph, { onSelect, selectedId } = {}) {
+    render(
+      graph,
+      {
+        onSelect,
+        selectedId,
+        onCreateRelationship,
+        onCutRelationship,
+        onInspectRelationship,
+        onClearSelection,
+      } = {},
+    ) {
       this.cancelAnimation();
       this.onSelect = onSelect || null;
+      this.onCreateRelationship = onCreateRelationship || null;
+      this.onCutRelationship = onCutRelationship || null;
+      this.onInspectRelationship = onInspectRelationship || null;
+      this.onClearSelection = onClearSelection || null;
       this.selectedId = selectedId || null;
       if (!graph || !graph.nodes.length) {
         this.clear();
@@ -92,6 +125,15 @@
           target: nodeById.get(edge.target_id),
         }))
         .filter((link) => link.source && link.target);
+      const degrees = new Map(this.nodes.map((node) => [node.id, 0]));
+      for (const link of this.links) {
+        degrees.set(link.source_id, (degrees.get(link.source_id) || 0) + 1);
+        degrees.set(link.target_id, (degrees.get(link.target_id) || 0) + 1);
+      }
+      for (const node of this.nodes) {
+        node.degree = degrees.get(node.id) || 0;
+        node.radius = nodeRadiusForDegree(node.degree);
+      }
       this.positions = new Map();
       this.initializePositions(previousPositions);
       this.buildLayers();
@@ -110,6 +152,9 @@
       this.positions = new Map();
       this.edgeLayer.replaceChildren();
       this.nodeLayer.replaceChildren();
+      this.mergeCandidateId = null;
+      this.cutEdgeId = null;
+      this.inspectEdgeId = null;
       this.empty.hidden = false;
       this.description.textContent = "This mind map has no formula cards yet.";
     }
@@ -149,14 +194,40 @@
       this.nodeLayer.replaceChildren();
 
       for (const link of this.links) {
-        const path = svgElement("path", {
-          class: `graph-edge ${link.requires_user_confirmation ? "pending" : "accepted"}`,
+        const hitArea = svgElement("path", {
+          class: "graph-edge-hit",
           "data-edge-id": link.id,
           "data-source-id": link.source_id,
           "data-target-id": link.target_id,
         });
+        hitArea.addEventListener("click", () => {
+          if (this.cutMode) this.onCutRelationship?.({ edge: link });
+          else if (this.inspectMode) this.onInspectRelationship?.({ edge: link });
+        });
+        const path = svgElement("path", {
+          class: `graph-edge ${
+            link.evidence_status === "supported" ? "is-supported" : "is-unverified"
+          }`,
+          "data-edge-id": link.id,
+          "data-source-id": link.source_id,
+          "data-target-id": link.target_id,
+          tabindex: "0",
+          role: "button",
+          "aria-label": `Cut relationship from ${link.source.name} to ${link.target.name}`,
+        });
+        path.addEventListener("click", () => {
+          if (this.cutMode) this.onCutRelationship?.({ edge: link });
+          else if (this.inspectMode) this.onInspectRelationship?.({ edge: link });
+        });
+        path.addEventListener("keydown", (event) => {
+          if (!["Enter", " "].includes(event.key)) return;
+          event.preventDefault();
+          if (this.cutMode) this.onCutRelationship?.({ edge: link });
+          else this.onInspectRelationship?.({ edge: link });
+        });
         link.element = path;
-        this.edgeLayer.append(path);
+        link.hitElement = hitArea;
+        this.edgeLayer.append(path, hitArea);
       }
 
       for (const node of this.nodes) {
@@ -173,22 +244,23 @@
         tabindex: "0",
         "aria-label": `Inspect ${node.name}`,
       });
-      const hitArea = svgElement("circle", { class: "node-hit", r: 34 });
-      const halo = svgElement("circle", { class: "node-halo", r: 19 });
+      const radius = node.radius || nodeRadiusForDegree(0);
+      const hitArea = svgElement("circle", { class: "node-hit", r: radius + 20 });
+      const halo = svgElement("circle", { class: "node-halo", r: radius + 7 });
       const surface = svgElement("circle", {
         class: "node-surface",
-        r: node.id === this.selectedId ? 12 : 9,
+        r: radius,
       });
       const label = svgElement("text", {
         class: "node-name",
         x: 0,
-        y: 34,
+        y: radius + 21,
         "text-anchor": "middle",
       });
       labelLines(node.name).forEach((line, index) => {
         const row = svgElement("tspan", {
           x: 0,
-          y: index === 0 ? 34 : 52,
+          y: index === 0 ? radius + 21 : radius + 39,
         });
         row.textContent = line;
         label.append(row);
@@ -220,6 +292,7 @@
         this.dragMoved = false;
         this.dragOffset = { x: point.x - position.x, y: point.y - position.y };
         group.setPointerCapture(event.pointerId);
+        this.updateRelationshipCandidate(point);
       });
       group.addEventListener("click", () => {
         if (this.dragMoved) {
@@ -243,8 +316,15 @@
           pointerId: event.pointerId,
           clientX: event.clientX,
           clientY: event.clientY,
+          startX: event.clientX,
+          startY: event.clientY,
           x: this.transform.x,
           y: this.transform.y,
+          moved: false,
+          isBlank:
+            !this.cutMode
+            && !this.inspectMode
+            && !event.target.closest(".graph-edge-hit"),
         };
         this.svg.setPointerCapture(event.pointerId);
       });
@@ -259,6 +339,7 @@
           position.y = nextY;
           position.vx = 0;
           position.vy = 0;
+          this.updateRelationshipCandidate(point);
           this.updatePositions();
           return;
         }
@@ -268,17 +349,94 @@
         const scaleY = this.height / bounds.height;
         this.transform.x = this.panStart.x + (event.clientX - this.panStart.clientX) * scaleX;
         this.transform.y = this.panStart.y + (event.clientY - this.panStart.clientY) * scaleY;
+        const panDistance = Math.hypot(
+          event.clientX - this.panStart.startX,
+          event.clientY - this.panStart.startY,
+        );
+        this.panStart.moved = this.panStart.moved || panDistance > 4;
         this.applyTransform();
       });
       const endPointer = (event) => {
         if (this.draggedNode) {
+          const dragged = this.draggedNode;
+          const candidate = this.mergeCandidateId
+            ? this.nodes.find((node) => node.id === this.mergeCandidateId)
+            : null;
           this.draggedNode = null;
+          this.mergeCandidateId = null;
+          this.updateHighlight();
           this.simulate();
+          if (this.dragMoved && candidate) {
+            this.onCreateRelationship?.({ sourceId: dragged.id, targetId: candidate.id });
+          }
         }
-        if (this.panStart?.pointerId === event.pointerId) this.panStart = null;
+        if (this.cutPointer?.pointerId === event.pointerId) {
+          const edge = this.links.find((link) => link.id === this.cutEdgeId);
+          const start = this.cutPointer;
+          const dragDistance = Math.hypot(
+            event.clientX - start.startX,
+            event.clientY - start.startY,
+          );
+          const dragMoved = this.cutDragMoved || dragDistance > 4 || event.type === "pointercancel";
+          this.cutPointer = null;
+          this.cutEdgeId = null;
+          this.cutDragMoved = false;
+          this.hideToolGhost();
+          this.updateHighlight();
+          if (edge) this.onCutRelationship?.({ edge });
+          if (edge || dragMoved) this.setCutMode(false);
+        }
+        if (this.inspectPointer?.pointerId === event.pointerId) {
+          const edge = this.links.find((link) => link.id === this.inspectEdgeId);
+          const start = this.inspectPointer;
+          const dragDistance = Math.hypot(
+            event.clientX - start.startX,
+            event.clientY - start.startY,
+          );
+          const dragMoved =
+            this.inspectDragMoved || dragDistance > 4 || event.type === "pointercancel";
+          this.inspectPointer = null;
+          this.inspectEdgeId = null;
+          this.inspectDragMoved = false;
+          this.hideToolGhost();
+          this.updateHighlight();
+          if (edge) this.onInspectRelationship?.({ edge });
+          if (edge || dragMoved) this.setInspectMode(false);
+        }
+        if (this.panStart?.pointerId === event.pointerId) {
+          const pan = this.panStart;
+          this.panStart = null;
+          if (pan.isBlank && !pan.moved && this.selectedId) this.onClearSelection?.();
+        }
       };
-      this.svg.addEventListener("pointerup", endPointer);
-      this.svg.addEventListener("pointercancel", endPointer);
+      window.addEventListener("pointerup", endPointer);
+      window.addEventListener("pointercancel", endPointer);
+      this.svg.addEventListener("pointermove", (event) => {
+        if (this.cutPointer?.pointerId === event.pointerId) {
+          const start = this.cutPointer;
+          const dragDistance = Math.hypot(
+            event.clientX - start.startX,
+            event.clientY - start.startY,
+          );
+          this.cutPointer = { ...start, clientX: event.clientX, clientY: event.clientY };
+          this.cutDragMoved = this.cutDragMoved || dragDistance > 4;
+          this.moveToolGhost(event.clientX, event.clientY);
+          this.cutEdgeId = this.nearestEdgeAt(event.clientX, event.clientY)?.id || null;
+        } else if (this.inspectPointer?.pointerId === event.pointerId) {
+          const start = this.inspectPointer;
+          const dragDistance = Math.hypot(
+            event.clientX - start.startX,
+            event.clientY - start.startY,
+          );
+          this.inspectPointer = { ...start, clientX: event.clientX, clientY: event.clientY };
+          this.inspectDragMoved = this.inspectDragMoved || dragDistance > 4;
+          this.moveToolGhost(event.clientX, event.clientY);
+          this.inspectEdgeId = this.nearestEdgeAt(event.clientX, event.clientY)?.id || null;
+        } else {
+          return;
+        }
+        this.updateHighlight();
+      });
       this.svg.addEventListener(
         "wheel",
         (event) => {
@@ -300,12 +458,169 @@
         this.zoomAt(this.width / 2, this.height / 2, 0.82);
       });
       document.querySelector("#graph-reset")?.addEventListener("click", () => this.fit());
+      const cutButton = document.querySelector("#graph-cut");
+      cutButton?.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0) return;
+        this.setInspectMode(false);
+        this.setCutMode(true);
+        this.beginCutDrag(event);
+      });
+      cutButton?.addEventListener("click", (event) => {
+        if (event.detail !== 0) return;
+        this.setCutMode(!this.cutMode);
+        cutButton.setAttribute("aria-pressed", String(this.cutMode));
+      });
+      const inspectButton = document.querySelector("#graph-inspect");
+      inspectButton?.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0) return;
+        this.setCutMode(false);
+        this.setInspectMode(true);
+        this.beginInspectDrag(event);
+      });
+      inspectButton?.addEventListener("click", (event) => {
+        if (event.detail !== 0) return;
+        this.setInspectMode(!this.inspectMode);
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && (this.cutMode || this.inspectMode)) {
+          this.setCutMode(false);
+          this.setInspectMode(false);
+        }
+      });
     }
 
     select(nodeId) {
       this.selectedId = nodeId;
       this.updateHighlight();
       this.onSelect?.(nodeId);
+    }
+
+    setCutMode(enabled) {
+      this.cutMode = Boolean(enabled);
+      if (!this.cutMode) {
+        this.cutPointer = null;
+        this.cutEdgeId = null;
+        this.cutDragMoved = false;
+        this.hideToolGhost();
+      }
+      this.svg.classList.toggle("is-cut-mode", this.cutMode);
+      document.querySelector("#graph-cut")?.setAttribute("aria-pressed", String(this.cutMode));
+      this.updateHighlight();
+    }
+
+    beginCutDrag(event) {
+      if (!this.cutMode || event.button !== 0) return;
+      event.preventDefault();
+      this.cutDragMoved = false;
+      this.cutPointer = {
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        startX: event.clientX,
+        startY: event.clientY,
+      };
+      this.showToolGhost("cut", event.clientX, event.clientY);
+      this.cutEdgeId = this.nearestEdgeAt(event.clientX, event.clientY)?.id || null;
+      this.svg.setPointerCapture(event.pointerId);
+      this.updateHighlight();
+    }
+
+    setInspectMode(enabled) {
+      this.inspectMode = Boolean(enabled);
+      if (!this.inspectMode) {
+        this.inspectPointer = null;
+        this.inspectEdgeId = null;
+        this.inspectDragMoved = false;
+        this.hideToolGhost();
+      }
+      this.svg.classList.toggle("is-inspect-mode", this.inspectMode);
+      document.querySelector("#graph-inspect")?.setAttribute(
+        "aria-pressed",
+        String(this.inspectMode),
+      );
+      this.updateHighlight();
+    }
+
+    beginInspectDrag(event) {
+      if (!this.inspectMode || event.button !== 0) return;
+      event.preventDefault();
+      this.inspectDragMoved = false;
+      this.inspectPointer = {
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        startX: event.clientX,
+        startY: event.clientY,
+      };
+      this.showToolGhost("inspect", event.clientX, event.clientY);
+      this.inspectEdgeId = this.nearestEdgeAt(event.clientX, event.clientY)?.id || null;
+      this.svg.setPointerCapture(event.pointerId);
+      this.updateHighlight();
+    }
+
+    showToolGhost(mode, clientX, clientY) {
+      const ghost = document.querySelector("#graph-tool-ghost");
+      const icon = document.querySelector("#graph-tool-ghost-icon use");
+      if (!ghost) return;
+      ghost.hidden = false;
+      ghost.dataset.mode = mode;
+      icon?.setAttribute("href", mode === "cut" ? "#icon-scissors" : "#icon-search");
+      this.moveToolGhost(clientX, clientY);
+    }
+
+    hideToolGhost() {
+      const ghost = document.querySelector("#graph-tool-ghost");
+      if (ghost) ghost.hidden = true;
+    }
+
+    moveToolGhost(clientX, clientY) {
+      const ghost = document.querySelector("#graph-tool-ghost");
+      const bounds = this.stage.getBoundingClientRect();
+      if (!ghost) return;
+      ghost.style.left = `${clientX - bounds.left}px`;
+      ghost.style.top = `${clientY - bounds.top}px`;
+    }
+
+    nearestEdgeAt(clientX, clientY) {
+      const point = this.clientToGraph(clientX, clientY);
+      let nearest = null;
+      let nearestDistance = 24 / this.transform.scale;
+      for (const link of this.links) {
+        const path = link.element;
+        if (!path || typeof path.getTotalLength !== "function") continue;
+        const length = path.getTotalLength();
+        for (let index = 0; index <= 30; index += 1) {
+          const sample = path.getPointAtLength((length * index) / 30);
+          const distance = Math.hypot(sample.x - point.x, sample.y - point.y);
+          if (distance < nearestDistance) {
+            nearest = link;
+            nearestDistance = distance;
+          }
+        }
+      }
+      return nearest;
+    }
+
+    updateRelationshipCandidate(point) {
+      if (!this.draggedNode) return;
+      const draggedPosition = this.positions.get(this.draggedNode.id);
+      let candidate = null;
+      let candidateDistance = Infinity;
+      for (const node of this.nodes) {
+        if (node.id === this.draggedNode.id) continue;
+        const position = this.positions.get(node.id);
+        const distance = Math.hypot(
+          draggedPosition.x - position.x,
+          draggedPosition.y - position.y,
+        );
+        if (distance < 52 && distance < candidateDistance) {
+          candidate = node;
+          candidateDistance = distance;
+        }
+      }
+      const changed = this.mergeCandidateId !== candidate?.id;
+      this.mergeCandidateId = candidate?.id || null;
+      if (changed) this.updateHighlight();
     }
 
     resize() {
@@ -408,16 +723,19 @@
         const normalY = dx / distance;
         const direction = hash(link.id) % 2 === 0 ? 1 : -1;
         const curve = (20 + (hash(link.id) % 18)) * direction;
-        const startX = source.x + (dx / distance) * 15;
-        const startY = source.y + (dy / distance) * 15;
-        const endX = target.x - (dx / distance) * 15;
-        const endY = target.y - (dy / distance) * 15;
+        const startPadding = (link.source.radius || 8) + 3;
+        const endPadding = (link.target.radius || 8) + 3;
+        const startX = source.x + (dx / distance) * startPadding;
+        const startY = source.y + (dy / distance) * startPadding;
+        const endX = target.x - (dx / distance) * endPadding;
+        const endY = target.y - (dy / distance) * endPadding;
         const controlX = (startX + endX) / 2 + normalX * curve;
         const controlY = (startY + endY) / 2 + normalY * curve;
         link.element?.setAttribute(
           "d",
           `M ${startX} ${startY} Q ${controlX} ${controlY} ${endX} ${endY}`,
         );
+        link.hitElement?.setAttribute("d", `M ${startX} ${startY} Q ${controlX} ${controlY} ${endX} ${endY}`);
       }
     }
 
@@ -434,11 +752,25 @@
         element?.classList.toggle("is-selected", node.id === this.selectedId);
         element?.classList.toggle("is-neighbor", node.id !== activeId && neighbours.has(node.id));
         element?.classList.toggle("is-dimmed", Boolean(activeId) && !neighbours.has(node.id));
+        element?.classList.toggle("is-merge-candidate", node.id === this.mergeCandidateId);
+        element?.classList.toggle("is-merge-source", node.id === this.draggedNode?.id && Boolean(this.mergeCandidateId));
         const surface = element?.querySelector(".node-surface");
-        surface?.setAttribute("r", node.id === this.selectedId ? "12" : "9");
+        const radius = node.radius || nodeRadiusForDegree(0);
+        surface?.setAttribute("r", String(radius));
+        element?.querySelector(".node-halo")?.setAttribute(
+          "r",
+          String(radius + (node.id === this.selectedId ? 11 : 7)),
+        );
       }
       for (const link of this.links) {
-        const active = link.source_id === activeId || link.target_id === activeId;
+        const active = link.id === this.cutEdgeId
+          || link.id === this.inspectEdgeId
+          || link.source_id === activeId
+          || link.target_id === activeId;
+        link.element?.classList.toggle("is-cut-target", link.id === this.cutEdgeId);
+        link.hitElement?.classList.toggle("is-cut-target", link.id === this.cutEdgeId);
+        link.element?.classList.toggle("is-inspect-target", link.id === this.inspectEdgeId);
+        link.hitElement?.classList.toggle("is-inspect-target", link.id === this.inspectEdgeId);
         link.element?.classList.toggle("is-active", active);
         link.element?.classList.toggle("is-dimmed", Boolean(activeId) && !active);
       }

@@ -15,11 +15,16 @@ const state = {
   tab: "overview",
   notesDirty: false,
   pendingRejectEdgeId: null,
+  pendingRelationship: null,
+  pendingUnlinkEdge: null,
+  pendingExploreEdge: null,
   libraryRequest: 0,
   selectionRequest: 0,
   deepDiveRequest: 0,
   deepGenerationRequest: 0,
   deepDiveFormulaId: null,
+  deepDiveMode: "formula",
+  deepDiveEdge: null,
   deepSessions: [],
   activeDeepSession: null,
   deepChatBusy: false,
@@ -61,18 +66,32 @@ const elements = {
   learningContent: document.querySelector("#learning-content"),
   deepDiveDialog: document.querySelector("#deep-dive-dialog"),
   deepDiveTitle: document.querySelector("#deep-dive-title"),
-  deepDiveFormula: document.querySelector("#deep-dive-formula"),
   deepDiveContent: document.querySelector("#deep-dive-content"),
-  deepSessionNew: document.querySelector("#deep-session-new"),
-  deepSessionNewLabel: document.querySelector("#deep-session-new-label"),
-  deepSessionDelete: document.querySelector("#deep-session-delete"),
-  deepSessionList: document.querySelector("#deep-session-list"),
   deepChatForm: document.querySelector("#deep-chat-form"),
   deepChatInput: document.querySelector("#deep-chat-input"),
   deepChatSubmit: document.querySelector("#deep-chat-submit"),
   deepChatStatus: document.querySelector("#deep-chat-status"),
   rejectDialog: document.querySelector("#reject-dialog"),
   confirmReject: document.querySelector("#confirm-reject"),
+  relationshipDialog: document.querySelector("#relationship-dialog"),
+  relationshipForm: document.querySelector("#relationship-form"),
+  relationshipSource: document.querySelector("#relationship-source"),
+  relationshipTarget: document.querySelector("#relationship-target"),
+  relationshipKind: document.querySelector("#relationship-kind"),
+  relationshipReason: document.querySelector("#relationship-reason"),
+  relationshipSwap: document.querySelector("#relationship-swap"),
+  confirmRelationship: document.querySelector("#confirm-relationship"),
+  unlinkDialog: document.querySelector("#unlink-dialog"),
+  unlinkRelation: document.querySelector("#unlink-relation"),
+  unlinkFormulas: document.querySelector("#unlink-formulas"),
+  confirmUnlink: document.querySelector("#confirm-unlink"),
+  relationshipExploreDialog: document.querySelector("#relationship-explore-dialog"),
+  relationshipExploreSource: document.querySelector("#relationship-explore-source"),
+  relationshipExploreTarget: document.querySelector("#relationship-explore-target"),
+  relationshipExploreKind: document.querySelector("#relationship-explore-kind"),
+  relationshipExploreOrigin: document.querySelector("#relationship-explore-origin"),
+  relationshipExploreNote: document.querySelector("#relationship-explore-note"),
+  confirmRelationshipExplore: document.querySelector("#confirm-relationship-explore"),
   toastRegion: document.querySelector("#toast-region"),
   themeToggle: document.querySelector("#theme-toggle"),
   toggleLeftPanel: document.querySelector("#toggle-left-panel"),
@@ -489,7 +508,18 @@ function renderGraph() {
   window.MathernetGraph?.render(state.graph, {
     onSelect: selectFormula,
     selectedId: state.selectedId,
+    onCreateRelationship: openRelationshipDialog,
+    onCutRelationship: openUnlinkDialog,
+    onInspectRelationship: openRelationshipExploreDialog,
+    onClearSelection: clearFormulaSelection,
   });
+}
+
+function deepDiveBasePath() {
+  const ownerId = state.deepDiveFormulaId;
+  if (!ownerId) return "";
+  const kind = state.deepDiveMode === "relationship" ? "edges" : "formulas";
+  return `/api/${kind}/${encodeURIComponent(ownerId)}/deep-dive`;
 }
 
 function renderOverview() {
@@ -588,41 +618,15 @@ function renderLearning() {
   `;
 }
 
-function renderDeepSessionList() {
-  if (!elements.deepSessionList) return;
-  elements.deepSessionList.innerHTML = state.deepSessions.length
-    ? state.deepSessions
-        .map((session, index) => `
-          <button
-            class="deep-session-tab ${session.id === state.activeDeepSession?.id ? "is-active" : ""}"
-            type="button"
-            data-deep-session-id="${escapeHTML(session.id)}"
-            aria-pressed="${session.id === state.activeDeepSession?.id}"
-          >
-            <span>${richText(session.title || `Session ${index + 1}`)}</span>
-            <small>${session.message_count || 0} message${session.message_count === 1 ? "" : "s"}</small>
-          </button>
-        `)
-        .join("")
-    : `<p class="deep-session-empty">No saved sessions yet.</p>`;
+function updateDeepDiveControls() {
   const busy = state.deepLoading || state.deepGenerating || state.deepChatBusy;
-  elements.deepSessionNew.disabled = busy;
-  elements.deepSessionNew.setAttribute("aria-busy", String(state.deepGenerating));
-  if (elements.deepSessionNewLabel) {
-    elements.deepSessionNewLabel.textContent = state.deepGenerating
-      ? "Generating…"
-      : state.deepLoading
-        ? "Opening…"
-        : "New session";
-  }
-  elements.deepSessionDelete.disabled = !state.activeDeepSession || busy;
   elements.deepChatInput.disabled = busy;
   elements.deepChatSubmit.disabled = busy || !state.activeDeepSession;
 }
 
 function renderDeepLoading(
-  label = "Preparing a new session…",
-  detail = "Mathernet is reading the formula context.",
+  label = "Preparing the exploration…",
+  detail = "Mathernet is reading the saved context.",
 ) {
   elements.deepDiveContent.setAttribute("aria-busy", "true");
   elements.deepDiveContent.innerHTML = `
@@ -643,7 +647,6 @@ function renderDeepDive({ scrollToBottom = false } = {}) {
   elements.deepDiveContent.innerHTML = `
     <article class="deep-article">
       <header class="deep-article-header">
-        <p class="section-kicker">Saved session</p>
         <h3>${richText(session.title || "Deep dive")}</h3>
       </header>
       <div class="deep-article-body">${deepArticleMarkup(session.article)}</div>
@@ -687,7 +690,7 @@ function renderDeepDive({ scrollToBottom = false } = {}) {
         </section>`
       : ""}
   `;
-  renderDeepSessionList();
+  updateDeepDiveControls();
   if (scrollToBottom) {
     elements.deepDiveContent.scrollTop = elements.deepDiveContent.scrollHeight;
   }
@@ -699,10 +702,10 @@ function showDeepDiveError(error) {
     <div class="deep-error">
       <h3>Deep dive unavailable</h3>
       <p>${escapeHTML(error.message)}</p>
-      <button class="button button-secondary" type="button" data-create-deep-session>Start a new session</button>
+        <button class="button button-secondary" type="button" data-retry-deep-dive>Try again</button>
     </div>
   `;
-  renderDeepSessionList();
+  updateDeepDiveControls();
 }
 
 async function loadDeepSession(sessionId, fromLoader = false) {
@@ -716,7 +719,7 @@ async function loadDeepSession(sessionId, fromLoader = false) {
   state.deepLoading = true;
   renderDeepLoading("Opening the saved session…", "Restoring the article and conversation.");
   try {
-    const session = await api(`/api/formulas/${encodeURIComponent(formulaId)}/deep-dive/sessions/${encodeURIComponent(sessionId)}`);
+    const session = await api(`${deepDiveBasePath()}/sessions/${encodeURIComponent(sessionId)}`);
     if (requestId !== state.deepDiveRequest || state.deepDiveFormulaId !== formulaId) return;
     state.activeDeepSession = session;
     renderDeepDive();
@@ -724,58 +727,52 @@ async function loadDeepSession(sessionId, fromLoader = false) {
     if (requestId === state.deepDiveRequest) showDeepDiveError(error);
   } finally {
     state.deepLoading = false;
-    renderDeepSessionList();
+    updateDeepDiveControls();
   }
 }
 
-async function createDeepSession(fromLoader = false) {
+async function createInitialDeepSession() {
   const formulaId = state.deepDiveFormulaId;
   if (!formulaId || state.deepChatBusy) return;
-  if (state.deepGenerating) {
-    if (!fromLoader) showToast("A deep dive is already being generated. Please wait for it to finish.", "notice");
-    return;
-  }
-  if (state.deepLoading && !fromLoader) return;
+  if (state.deepGenerating || state.deepLoading) return;
   const requestId = ++state.deepGenerationRequest;
   state.deepGenerating = true;
-  renderDeepSessionList();
+  updateDeepDiveControls();
   renderDeepLoading(
-    "Generating a fresh deep dive…",
+    "Generating your exploration…",
     "Mathernet is researching and writing the opening article. This can take up to a minute.",
   );
   try {
-    const session = await api(`/api/formulas/${encodeURIComponent(formulaId)}/deep-dive/sessions`, {
+    const session = await api(`${deepDiveBasePath()}/sessions`, {
       method: "POST",
       body: JSON.stringify({}),
     });
     if (requestId !== state.deepGenerationRequest || state.deepDiveFormulaId !== formulaId) return;
     state.activeDeepSession = session;
-    state.deepSessions = await api(`/api/formulas/${encodeURIComponent(formulaId)}/deep-dive/sessions`).then((payload) => payload.sessions || []);
+    state.deepSessions = await api(`${deepDiveBasePath()}/sessions`).then((payload) => payload.sessions || []);
     renderDeepDive();
   } catch (error) {
     if (requestId === state.deepGenerationRequest && state.deepDiveFormulaId === formulaId) showDeepDiveError(error);
   } finally {
     if (requestId === state.deepGenerationRequest) state.deepGenerating = false;
-    renderDeepSessionList();
+    updateDeepDiveControls();
   }
 }
 
 async function loadDeepDiveSessions({ createIfEmpty = false } = {}) {
-  const card = state.selectedCard;
-  if (!card) return;
-  const formulaId = card.formula.id;
-  state.deepDiveFormulaId = formulaId;
+  const formulaId = state.deepDiveFormulaId;
+  if (!formulaId) return;
   const requestId = ++state.deepDiveRequest;
   state.deepLoading = true;
-  renderDeepSessionList();
+  updateDeepDiveControls();
   renderDeepLoading("Opening your saved sessions…", "Checking this formula's saved explorations.");
   try {
-    const payload = await api(`/api/formulas/${encodeURIComponent(formulaId)}/deep-dive/sessions`);
+    const payload = await api(`${deepDiveBasePath()}/sessions`);
     if (requestId !== state.deepDiveRequest || state.deepDiveFormulaId !== formulaId) return;
     state.deepSessions = payload.sessions || [];
     if (!state.deepSessions.length && createIfEmpty) {
       if (state.deepGenerating && state.deepDiveFormulaId === formulaId) return;
-      await createDeepSession(true);
+      await createInitialDeepSession();
       return;
     }
     if (state.deepSessions.length) {
@@ -785,31 +782,27 @@ async function loadDeepDiveSessions({ createIfEmpty = false } = {}) {
     state.activeDeepSession = null;
     elements.deepDiveContent.innerHTML = `
       <div class="deep-empty">
-        <h3>Start a deep dive</h3>
-        <p>Create a new session when you are ready to explore this formula.</p>
-        <button class="button button-primary" type="button" data-create-deep-session>
-          ${icon("plus")} New session
-        </button>
+        <h3>Exploration removed</h3>
+        <p>Reopen Explore deeper when you want Mathernet to generate another exploration.</p>
       </div>
     `;
-    renderDeepSessionList();
+    updateDeepDiveControls();
   } catch (error) {
     if (requestId === state.deepDiveRequest) showDeepDiveError(error);
   } finally {
     state.deepLoading = false;
-    renderDeepSessionList();
+    updateDeepDiveControls();
   }
 }
 
 function openDeepDive() {
   const card = state.selectedCard;
   if (!card) return;
+  state.deepDiveMode = "formula";
   state.deepDiveFormulaId = card.formula.id;
+  state.deepDiveEdge = null;
   state.activeDeepSession = null;
   elements.deepDiveTitle.textContent = card.formula.name;
-  elements.deepDiveFormula.setAttribute("role", "math");
-  elements.deepDiveFormula.setAttribute("aria-label", formulaValue(card) || card.display);
-  elements.deepDiveFormula.innerHTML = latexMarkup(formulaValue(card), card.display);
   if (!elements.deepDiveDialog.open) elements.deepDiveDialog.showModal();
   loadDeepDiveSessions({ createIfEmpty: true });
 }
@@ -833,11 +826,11 @@ async function submitDeepChat(event) {
   renderDeepDive({ scrollToBottom: true });
   try {
     const result = await api(
-      `/api/formulas/${encodeURIComponent(formulaId)}/deep-dive/sessions/${encodeURIComponent(session.id)}/chat`,
+      `${deepDiveBasePath()}/sessions/${encodeURIComponent(session.id)}/chat`,
       { method: "POST", body: JSON.stringify({ message }) },
     );
     state.activeDeepSession = result.session;
-    state.deepSessions = await api(`/api/formulas/${encodeURIComponent(formulaId)}/deep-dive/sessions`).then((payload) => payload.sessions || []);
+    state.deepSessions = await api(`${deepDiveBasePath()}/sessions`).then((payload) => payload.sessions || []);
     elements.deepChatStatus.textContent = "Ask a follow-up whenever you are ready.";
   } catch (error) {
     state.activeDeepSession = session;
@@ -849,25 +842,6 @@ async function submitDeepChat(event) {
     setBusy(elements.deepChatSubmit, false);
     renderDeepDive({ scrollToBottom: true });
     elements.deepChatInput.focus();
-  }
-}
-
-async function deleteDeepSession() {
-  const formulaId = state.deepDiveFormulaId;
-  const session = state.activeDeepSession;
-  if (!formulaId || !session || state.deepChatBusy) return;
-  const confirmed = window.confirm("Delete this deep-dive session and its conversation?");
-  if (!confirmed) return;
-  try {
-    await api(
-      `/api/formulas/${encodeURIComponent(formulaId)}/deep-dive/sessions/${encodeURIComponent(session.id)}`,
-      { method: "DELETE" },
-    );
-    state.activeDeepSession = null;
-    await loadDeepDiveSessions({ createIfEmpty: false });
-    showToast("Deep-dive session deleted.");
-  } catch (error) {
-    showToast(error.message, "error");
   }
 }
 
@@ -1057,6 +1031,22 @@ async function selectFormula(formulaId) {
   } catch (error) {
     showToast(error.message, "error");
   }
+}
+
+function clearFormulaSelection() {
+  if (state.notesDirty) {
+    const leave = window.confirm("You have an unsaved note. Clear this formula without saving?");
+    if (!leave) return;
+  }
+  state.selectionRequest += 1;
+  state.selectedId = null;
+  state.selectedCard = null;
+  state.introduction = null;
+  state.introductionLoading = false;
+  state.introductionError = "";
+  state.notesDirty = false;
+  renderAll();
+  syncUrl();
 }
 
 async function refreshSelection() {
@@ -1392,7 +1382,10 @@ async function submitFormulaSearch(event) {
   try {
     const result = await api("/api/learn", {
       method: "POST",
-      body: JSON.stringify({ query }),
+      body: JSON.stringify({
+        query,
+        map_session_id: state.activeMapSessionId || "",
+      }),
     });
     const formulaId = result.formula.formula.id;
     if (state.activeMapSessionId) {
@@ -1516,6 +1509,105 @@ async function confirmReject() {
     showToast(error.message, "error");
   } finally {
     setBusy(elements.confirmReject, false);
+  }
+}
+
+function openRelationshipDialog({ sourceId, targetId }) {
+  const source = state.graph?.nodes?.find((node) => node.id === sourceId);
+  const target = state.graph?.nodes?.find((node) => node.id === targetId);
+  if (!source || !target) return;
+  state.pendingRelationship = { sourceId, targetId };
+  elements.relationshipSource.textContent = source.name;
+  elements.relationshipTarget.textContent = target.name;
+  elements.relationshipKind.value = "prerequisite";
+  elements.relationshipReason.value = "These formulas describe related mathematical structures.";
+  elements.relationshipDialog.showModal();
+}
+
+function openUnlinkDialog({ edge }) {
+  if (!edge) return;
+  state.pendingUnlinkEdge = edge;
+  elements.unlinkRelation.textContent = relationLabels[edge.relation] || edge.relation;
+  elements.unlinkFormulas.textContent = `${edge.source_name} → ${edge.target_name}`;
+  elements.unlinkDialog.showModal();
+}
+
+function openRelationshipExploreDialog({ edge }) {
+  if (!edge) return;
+  state.pendingExploreEdge = edge;
+  elements.relationshipExploreSource.textContent = edge.source_name;
+  elements.relationshipExploreTarget.textContent = edge.target_name;
+  elements.relationshipExploreKind.textContent = relationLabels[edge.relation] || edge.relation;
+  const origin = edge.created_by === "manual" ? "Your relationship" : "AI relationship";
+  const evidence = edge.evidence_status === "supported"
+    ? "Evidence-supported"
+    : "Unconfirmed";
+  elements.relationshipExploreOrigin.textContent = `${origin} · ${evidence}`;
+  elements.relationshipExploreNote.textContent = edge.rationale;
+  elements.relationshipExploreDialog.showModal();
+}
+
+function openRelationshipDeepDive(edge) {
+  if (!edge) return;
+  state.deepDiveMode = "relationship";
+  state.deepDiveFormulaId = edge.id;
+  state.deepDiveEdge = edge;
+  state.activeDeepSession = null;
+  elements.deepDiveTitle.textContent = `${edge.source_name} → ${edge.target_name}`;
+  if (!elements.deepDiveDialog.open) elements.deepDiveDialog.showModal();
+  loadDeepDiveSessions({ createIfEmpty: true });
+}
+
+async function createRelationship(event) {
+  event.preventDefault();
+  const pending = state.pendingRelationship;
+  if (!pending) return;
+  setBusy(elements.confirmRelationship, true, "Checking relationship…");
+  try {
+    const created = await api("/api/edges", {
+      method: "POST",
+      body: JSON.stringify({
+        source_id: pending.sourceId,
+        target_id: pending.targetId,
+        relation: elements.relationshipKind.value,
+        rationale: elements.relationshipReason.value.trim(),
+        source_ids: [],
+        manual: true,
+      }),
+    });
+    closeDialog(elements.relationshipDialog);
+    state.pendingRelationship = null;
+    await loadMapSessions({ preferredId: state.activeMapSessionId });
+    showToast(
+      created.evidence_status === "supported"
+        ? "Relationship verified and connected."
+        : "Relationship saved as an unconfirmed dashed connection.",
+      created.evidence_status === "supported" ? "success" : "notice",
+    );
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    setBusy(elements.confirmRelationship, false);
+  }
+}
+
+async function removeRelationship() {
+  const edge = state.pendingUnlinkEdge;
+  if (!edge) return;
+  setBusy(elements.confirmUnlink, true, "Removing…");
+  try {
+    await api(`/api/edges/${encodeURIComponent(edge.id)}`, {
+      method: "DELETE",
+      body: JSON.stringify({ expected_updated_at: edge.updated_at }),
+    });
+    closeDialog(elements.unlinkDialog);
+    state.pendingUnlinkEdge = null;
+    await loadMapSessions({ preferredId: state.activeMapSessionId });
+    showToast("Relationship removed.");
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    setBusy(elements.confirmUnlink, false);
   }
 }
 
@@ -1668,6 +1760,15 @@ function bindEvents() {
       state.sessionMenuId = null;
       renderSessionList();
     }
+    const sessionComposerOpen = !elements.sessionCreate.hidden;
+    const clickedComposer = event.target.closest("#session-create, #new-map-session");
+    if (
+      sessionComposerOpen
+      && !clickedComposer
+      && !elements.sessionName.value.trim()
+    ) {
+      elements.sessionCreate.hidden = true;
+    }
   });
 
   elements.toggleLeftPanel.addEventListener("click", () => {
@@ -1733,6 +1834,26 @@ function bindEvents() {
     if (state.firstRun) event.preventDefault();
   });
   elements.confirmReject.addEventListener("click", confirmReject);
+  elements.relationshipForm.addEventListener("submit", createRelationship);
+  elements.relationshipSwap.addEventListener("click", () => {
+    const pending = state.pendingRelationship;
+    if (!pending) return;
+    state.pendingRelationship = {
+      sourceId: pending.targetId,
+      targetId: pending.sourceId,
+    };
+    const source = elements.relationshipSource.textContent;
+    elements.relationshipSource.textContent = elements.relationshipTarget.textContent;
+    elements.relationshipTarget.textContent = source;
+  });
+  elements.confirmUnlink.addEventListener("click", removeRelationship);
+  elements.confirmRelationshipExplore.addEventListener("click", () => {
+    const edge = state.pendingExploreEdge;
+    if (!edge) return;
+    closeDialog(elements.relationshipExploreDialog);
+    state.pendingExploreEdge = null;
+    openRelationshipDeepDive(edge);
+  });
   elements.themeToggle.addEventListener("click", () => {
     const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
     setTheme(next);
@@ -1755,14 +1876,10 @@ function bindEvents() {
     }
   });
 
-  elements.deepSessionNew.addEventListener("click", createDeepSession);
-  elements.deepSessionDelete.addEventListener("click", deleteDeepSession);
-  elements.deepSessionList.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-deep-session-id]");
-    if (button && !state.deepChatBusy) loadDeepSession(button.dataset.deepSessionId);
-  });
   elements.deepDiveContent.addEventListener("click", (event) => {
-    if (event.target.closest("[data-create-deep-session]")) createDeepSession();
+    if (event.target.closest("[data-retry-deep-dive]")) {
+      loadDeepDiveSessions({ createIfEmpty: true });
+    }
   });
   elements.deepChatForm.addEventListener("submit", submitDeepChat);
   elements.deepChatInput.addEventListener("keydown", (event) => {
