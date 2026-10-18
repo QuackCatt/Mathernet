@@ -9,6 +9,7 @@ from typing import Any, Iterable
 from urllib.parse import urlparse
 
 from .errors import SynthesisError
+from .normalization import formula_key
 
 
 FORMULA_DISCOVERY_SKILL = (
@@ -92,8 +93,10 @@ FORMULA_CHAT_SKILL = (
 
 RELATIONSHIP_DEEP_DIVE_SKILL = (
     "Read and follow the local relationship deep-dive skill instructions before generating. Explain "
-    "why the two formulas are mathematically connected, using the saved relationship type and "
-    "rationale. Use LaTeX for mathematics, acknowledge uncertainty, and never invent citations."
+    "why the two formulas are mathematically connected, using the saved relationship type. For a "
+    "confirmed manual relationship, incorporate any learner_note as user-supplied context without "
+    "treating it as unquestionable truth; omit learner_note when it is absent. Use LaTeX for "
+    "mathematics, acknowledge uncertainty, and never invent citations."
 )
 
 RELATIONSHIP_VALIDATION_SKILL = (
@@ -212,6 +215,83 @@ class FormulaDiscovery:
         self.reason = self.reason.strip()
 
 
+@dataclass(slots=True)
+class FormulaCandidate:
+    canonical_name: str
+    latex: str
+    summary: str
+    topic: str
+    reason: str
+    confidence: float = 0.0
+    local_formula_id: str = ""
+
+    def __post_init__(self) -> None:
+        self.canonical_name = self.canonical_name.strip()
+        self.latex = self.latex.strip()
+        self.summary = self.summary.strip()
+        self.topic = self.topic.strip()
+        self.reason = self.reason.strip()
+        self.local_formula_id = self.local_formula_id.strip()
+        self.confidence = min(1.0, max(0.0, float(self.confidence)))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "canonical_name": self.canonical_name,
+            "latex": self.latex,
+            "summary": self.summary,
+            "topic": self.topic,
+            "reason": self.reason,
+            "confidence": self.confidence,
+            "local_formula_id": self.local_formula_id,
+        }
+
+
+FORMULA_CANDIDATE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["candidates"],
+    "properties": {
+        "candidates": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 5,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "canonical_name",
+                    "latex",
+                    "summary",
+                    "topic",
+                    "reason",
+                    "confidence",
+                    "local_formula_id",
+                ],
+                "properties": {
+                    "canonical_name": {"type": "string"},
+                    "latex": {"type": "string"},
+                    "summary": {"type": "string"},
+                    "topic": {"type": "string"},
+                    "reason": {"type": "string"},
+                    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                    "local_formula_id": {"type": "string"},
+                },
+            },
+        }
+    },
+}
+
+
+FORMULA_CANDIDATE_SKILL = (
+    "You are Mathernet's formula search skill. Interpret a possibly vague request and return one "
+    "to five distinct formula candidates. Each candidate must be a concrete named mathematical "
+    "formula, identity, theorem, distribution, or transform with a usable LaTeX expression. Do not "
+    "return broad topics, duplicate equivalent names, or invented formulas. Use web search when "
+    "available, prefer established mathematical references, and order candidates from most to least "
+    "likely to match the request. Return only valid JSON matching the requested schema."
+)
+
+
 def build_formula_discovery_prompt(
     query: str,
     library: Iterable[dict[str, Any]],
@@ -254,6 +334,63 @@ def parse_formula_discovery(raw: str) -> FormulaDiscovery:
     )
 
 
+def build_formula_candidate_prompt(
+    query: str,
+    library: Iterable[dict[str, Any]],
+) -> str:
+    catalog = [
+        {
+            "id": str(item.get("id", "")),
+            "name": str(item.get("name", "")),
+            "aliases": [str(alias) for alias in item.get("aliases", [])],
+            "latex": str(item.get("latex", "")),
+        }
+        for item in library
+    ]
+    return json.dumps(
+        {
+            "request": query,
+            "local_formula_catalog": catalog,
+            "task": (
+                "Return 1-5 plausible formulas for the request. Reuse a local_formula_id only for "
+                "an exact existing match; otherwise leave it empty. Give each candidate a concise "
+                "summary and explain why it fits the request."
+            ),
+            "deduplication_policy": DEDUPLICATION_SKILL,
+        },
+        ensure_ascii=False,
+    )
+
+
+def parse_formula_candidates(raw: str) -> list[FormulaCandidate]:
+    data = _json_object(raw)
+    items = data.get("candidates")
+    if not isinstance(items, list):
+        raise SynthesisError("AI formula candidates response did not contain candidates")
+    candidates = []
+    seen = set()
+    for item in items[:5]:
+        if not isinstance(item, dict):
+            continue
+        candidate = FormulaCandidate(
+            canonical_name=str(item.get("canonical_name", "")),
+            latex=str(item.get("latex", "")),
+            summary=str(item.get("summary", "")),
+            topic=str(item.get("topic", "")),
+            reason=str(item.get("reason", "")),
+            confidence=item.get("confidence", 0),
+            local_formula_id=str(item.get("local_formula_id", "")),
+        )
+        key = formula_key(candidate.canonical_name)
+        if not candidate.canonical_name or not candidate.latex or not candidate.summary or key in seen:
+            continue
+        seen.add(key)
+        candidates.append(candidate)
+    if not candidates:
+        raise SynthesisError("AI formula candidates response contained no usable candidates")
+    return candidates
+
+
 def build_formula_synthesis_prompt(*, has_sources: bool) -> str:
     mode = "source_bounded_answer" if has_sources else "provider_native_answer"
     return (
@@ -283,17 +420,27 @@ def build_relationship_deep_dive_prompt(
     relationship: dict[str, Any],
     sources: Iterable[dict[str, Any]],
 ) -> str:
+    relationship_payload = dict(relationship)
+    task = (
+        "Generate the session's initial long-form explanation of this AI-created relationship. "
+        "Explain the mathematical connection independently and include only reliable source URLs."
+    )
+    if relationship_payload.get("created_by") == "manual":
+        relationship_payload.pop("rationale", None)
+        learner_note = str(relationship.get("rationale") or "").strip()
+        if learner_note:
+            relationship_payload["learner_note"] = learner_note
+        task = (
+            "Generate the session's initial long-form explanation of this AI-confirmed manual "
+            "relationship. Incorporate learner_note, when present, as user-supplied context and "
+            "compare it with reliable mathematical research. Include only reliable source URLs."
+        )
     return json.dumps(
         {
             "skill_file": "mathernet/skills/relationship_deep_dive.md",
-            "relationship": relationship,
+            "relationship": relationship_payload,
             "known_sources": list(sources),
-            "task": (
-                "Generate the session's initial long-form explanation of the relationship. When the "
-                "relationship was manually created, treat its rationale as the learner's hypothesis "
-                "and compare it with reliable research. If no independent support is found, return "
-                "empty sources and keep the article strictly limited to the learner's note."
-            ),
+            "task": task,
         },
         ensure_ascii=False,
     )

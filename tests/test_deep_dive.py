@@ -151,6 +151,20 @@ class DeepDiveTests(unittest.TestCase):
                 "warnings": [],
             }))
 
+    def test_empty_generated_article_does_not_replace_saved_content(self):
+        with self.assertRaises(SynthesisError):
+            self.sessions.create(
+                "formula_euler_identity",
+                {
+                    "title": "Empty response",
+                    "article": {"introduction": "", "sections": []},
+                    "sources": [],
+                    "warnings": [],
+                },
+            )
+
+        self.assertEqual(self.sessions.list("formula_euler_identity"), [])
+
     def test_sessions_are_preserved_and_new_sessions_regenerate(self):
         first = handle_api_request(
             self.service,
@@ -215,6 +229,33 @@ class DeepDiveTests(unittest.TestCase):
         persisted = self.sessions.get("formula_euler_identity", created["id"])
         self.assertEqual(len(persisted["messages"]), 2)
 
+    def test_chat_keeps_user_message_when_reply_fails(self):
+        created = handle_api_request(
+            self.service,
+            "POST",
+            "/api/formulas/formula_euler_identity/deep-dive/sessions",
+            {},
+        ).payload
+
+        def fail_reply(formula, deep_dive, messages):
+            raise SynthesisError("provider did not return a reply")
+
+        self.gateway.chat = fail_reply
+        response = handle_api_request(
+            self.service,
+            "POST",
+            f"/api/formulas/formula_euler_identity/deep-dive/sessions/{created['id']}/chat",
+            {"message": "Please preserve this question."},
+        )
+
+        self.assertEqual(response.status, 502)
+        self.assertEqual(response.payload["error"]["code"], "upstream_error")
+        persisted = self.sessions.get("formula_euler_identity", created["id"])
+        self.assertEqual(
+            [(item["role"], item["content"]) for item in persisted["messages"]],
+            [("user", "Please preserve this question.")],
+        )
+
     def test_sessions_can_be_deleted_from_local_storage(self):
         created = handle_api_request(
             self.service,
@@ -256,9 +297,10 @@ class DeepDiveTests(unittest.TestCase):
         self.assertEqual(len(chat.payload["session"]["messages"]), 2)
         self.assertEqual(self.gateway.chat_calls[-1][0]["id"], "edge_complex_to_euler")
 
-    def test_manual_relationship_without_web_support_shows_the_saved_note(self):
+    def test_unconfirmed_manual_relationship_shows_only_the_saved_note(self):
         self.gateway.relationship_sources = []
         self.gateway.relationship_validation_sources = []
+        self.gateway.relationship_explanation_reasonable = False
         self.gateway.relationship_web_supported = False
         edge = self.service.add_edge(
             source_ref="formula_taylor_series",
@@ -275,12 +317,117 @@ class DeepDiveTests(unittest.TestCase):
             {},
         )
         self.assertEqual(created.status, 201)
+        self.assertEqual(edge["evidence_status"], "unverified")
         self.assertEqual(
             created.payload["article"]["introduction"],
             "The Taylor expansion is my chosen route to the complex exponential.",
         )
         self.assertEqual(created.payload["sources"], [])
-        self.assertIn("only your explanation", created.payload["warnings"][0])
+        self.assertEqual(created.payload["warnings"], [])
+        self.assertEqual(self.gateway.relationship_calls, [])
+
+    def test_unconfirmed_manual_relationship_without_note_says_relationship_unclear(self):
+        self.gateway.relationship_explanation_reasonable = False
+        self.gateway.relationship_web_supported = False
+        edge = self.service.add_edge(
+            source_ref="formula_taylor_series",
+            target_ref="formula_complex_exponential",
+            relation="derivation_basis",
+            rationale="",
+            source_ids=[],
+            manual=True,
+        )
+        created = handle_api_request(
+            self.service,
+            "POST",
+            f"/api/edges/{edge['id']}/deep-dive/sessions",
+            {},
+        )
+
+        self.assertEqual(created.status, 201)
+        self.assertEqual(
+            created.payload["article"]["introduction"],
+            "Relationship unclear.",
+        )
+        self.assertEqual(created.payload["warnings"], [])
+        self.assertEqual(self.gateway.relationship_calls, [])
+
+    def test_unconfirmed_manual_relationship_chat_does_not_call_ai(self):
+        self.gateway.relationship_explanation_reasonable = False
+        self.gateway.relationship_web_supported = False
+        edge = self.service.add_edge(
+            source_ref="formula_taylor_series",
+            target_ref="formula_complex_exponential",
+            relation="derivation_basis",
+            rationale="My unconfirmed note.",
+            source_ids=[],
+            manual=True,
+        )
+        created = handle_api_request(
+            self.service,
+            "POST",
+            f"/api/edges/{edge['id']}/deep-dive/sessions",
+            {},
+        ).payload
+        response = handle_api_request(
+            self.service,
+            "POST",
+            f"/api/edges/{edge['id']}/deep-dive/sessions/{created['id']}/chat",
+            {"message": "Please explain more."},
+        )
+
+        self.assertEqual(response.status, 400)
+        self.assertEqual(self.gateway.chat_calls, [])
+
+    def test_confirmed_manual_relationship_generates_ai_content_with_user_note(self):
+        self.gateway.relationship_explanation_reasonable = True
+        self.gateway.relationship_web_supported = False
+        edge = self.service.add_edge(
+            source_ref="formula_taylor_series",
+            target_ref="formula_complex_exponential",
+            relation="derivation_basis",
+            rationale="The Taylor expansion is my chosen route to the complex exponential.",
+            source_ids=[],
+            manual=True,
+        )
+        created = handle_api_request(
+            self.service,
+            "POST",
+            f"/api/edges/{edge['id']}/deep-dive/sessions",
+            {},
+        )
+
+        self.assertEqual(edge["evidence_status"], "supported")
+        self.assertEqual(created.status, 201)
+        self.assertIn("relationship links", created.payload["article"]["introduction"])
+        self.assertEqual(len(self.gateway.relationship_calls), 1)
+        self.assertEqual(
+            self.gateway.relationship_calls[0][0]["rationale"],
+            "The Taylor expansion is my chosen route to the complex exponential.",
+        )
+
+    def test_ai_relationship_without_sources_still_generates_ai_content(self):
+        edge = self.repository.add_edge(
+            edge_id="edge_ai_unverified",
+            source_id="formula_taylor_series",
+            target_id="formula_complex_exponential",
+            relation="derivation_basis",
+            rationale="AI identified a shared series structure.",
+            sources=[],
+        )
+        self.assertEqual(edge.created_by, "ai")
+        self.assertEqual(edge.evidence_status.value, "unverified")
+
+        created = handle_api_request(
+            self.service,
+            "POST",
+            "/api/edges/edge_ai_unverified/deep-dive/sessions",
+            {},
+        )
+
+        self.assertEqual(created.status, 201)
+        self.assertIn("relationship links", created.payload["article"]["introduction"])
+        self.assertEqual(len(self.gateway.relationship_calls), 1)
 
     def test_unexplained_manual_relationship_without_support_is_unverified(self):
         self.gateway.relationship_sources = []

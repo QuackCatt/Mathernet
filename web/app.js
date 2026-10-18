@@ -38,6 +38,8 @@ const state = {
   gateway: null,
   firstRun: true,
   providerDrafts: {},
+  formulaCandidates: [],
+  formulaCandidateBusy: false,
 };
 
 const elements = {
@@ -71,6 +73,10 @@ const elements = {
   deepChatInput: document.querySelector("#deep-chat-input"),
   deepChatSubmit: document.querySelector("#deep-chat-submit"),
   deepChatStatus: document.querySelector("#deep-chat-status"),
+  candidateDialog: document.querySelector("#candidate-dialog"),
+  candidateQuery: document.querySelector("#candidate-query"),
+  candidateGrid: document.querySelector("#candidate-grid"),
+  candidateRetry: document.querySelector("#candidate-retry"),
   rejectDialog: document.querySelector("#reject-dialog"),
   confirmReject: document.querySelector("#confirm-reject"),
   relationshipDialog: document.querySelector("#relationship-dialog"),
@@ -91,6 +97,7 @@ const elements = {
   relationshipExploreKind: document.querySelector("#relationship-explore-kind"),
   relationshipExploreOrigin: document.querySelector("#relationship-explore-origin"),
   relationshipExploreNote: document.querySelector("#relationship-explore-note"),
+  relationshipExploreDescription: document.querySelector("#relationship-explore-description"),
   confirmRelationshipExplore: document.querySelector("#confirm-relationship-explore"),
   toastRegion: document.querySelector("#toast-region"),
   themeToggle: document.querySelector("#theme-toggle"),
@@ -620,8 +627,18 @@ function renderLearning() {
 
 function updateDeepDiveControls() {
   const busy = state.deepLoading || state.deepGenerating || state.deepChatBusy;
-  elements.deepChatInput.disabled = busy;
-  elements.deepChatSubmit.disabled = busy || !state.activeDeepSession;
+  const unconfirmedManualRelationship =
+    state.deepDiveMode === "relationship"
+    && state.deepDiveEdge?.created_by === "manual"
+    && state.deepDiveEdge?.evidence_status !== "supported";
+  const chatDisabled = busy || unconfirmedManualRelationship || !state.activeDeepSession;
+  elements.deepChatInput.disabled = chatDisabled;
+  elements.deepChatSubmit.disabled = chatDisabled;
+  if (unconfirmedManualRelationship) {
+    elements.deepChatStatus.textContent = "This relationship is unconfirmed; this exploration preserves only your note.";
+  } else if (!busy && state.activeDeepSession) {
+    elements.deepChatStatus.textContent = "Ask about the history, uses, or meaning of this formula.";
+  }
 }
 
 function renderDeepLoading(
@@ -726,15 +743,15 @@ async function loadDeepSession(sessionId, fromLoader = false) {
   } catch (error) {
     if (requestId === state.deepDiveRequest) showDeepDiveError(error);
   } finally {
-    state.deepLoading = false;
+    if (requestId === state.deepDiveRequest) state.deepLoading = false;
     updateDeepDiveControls();
   }
 }
 
-async function createInitialDeepSession() {
+async function createInitialDeepSession(fromLoader = false) {
   const formulaId = state.deepDiveFormulaId;
   if (!formulaId || state.deepChatBusy) return;
-  if (state.deepGenerating || state.deepLoading) return;
+  if (!fromLoader && (state.deepGenerating || state.deepLoading)) return;
   const requestId = ++state.deepGenerationRequest;
   state.deepGenerating = true;
   updateDeepDiveControls();
@@ -749,10 +766,18 @@ async function createInitialDeepSession() {
     });
     if (requestId !== state.deepGenerationRequest || state.deepDiveFormulaId !== formulaId) return;
     state.activeDeepSession = session;
-    state.deepSessions = await api(`${deepDiveBasePath()}/sessions`).then((payload) => payload.sessions || []);
     renderDeepDive();
+    try {
+      state.deepSessions = await api(`${deepDiveBasePath()}/sessions`).then((payload) => payload.sessions || []);
+    } catch {
+      state.deepSessions = [session];
+    }
   } catch (error) {
-    if (requestId === state.deepGenerationRequest && state.deepDiveFormulaId === formulaId) showDeepDiveError(error);
+    if (requestId === state.deepGenerationRequest && state.deepDiveFormulaId === formulaId) {
+      state.deepGenerating = false;
+      showDeepDiveError(error);
+      return;
+    }
   } finally {
     if (requestId === state.deepGenerationRequest) state.deepGenerating = false;
     updateDeepDiveControls();
@@ -772,7 +797,7 @@ async function loadDeepDiveSessions({ createIfEmpty = false } = {}) {
     state.deepSessions = payload.sessions || [];
     if (!state.deepSessions.length && createIfEmpty) {
       if (state.deepGenerating && state.deepDiveFormulaId === formulaId) return;
-      await createInitialDeepSession();
+      await createInitialDeepSession(true);
       return;
     }
     if (state.deepSessions.length) {
@@ -790,7 +815,7 @@ async function loadDeepDiveSessions({ createIfEmpty = false } = {}) {
   } catch (error) {
     if (requestId === state.deepDiveRequest) showDeepDiveError(error);
   } finally {
-    state.deepLoading = false;
+    if (requestId === state.deepDiveRequest) state.deepLoading = false;
     updateDeepDiveControls();
   }
 }
@@ -1370,6 +1395,80 @@ async function refreshGatewayConnection() {
   }
 }
 
+function renderFormulaCandidates(query, candidates) {
+  elements.candidateQuery.textContent = query;
+  elements.candidateGrid.innerHTML = candidates.map((candidate, index) => {
+    const confidence = Math.round(Number(candidate.confidence || 0) * 100);
+    return `
+      <button class="candidate-card" type="button" data-candidate-index="${index}">
+        <span class="candidate-card-top">
+          <span class="candidate-kind ${candidate.existing ? "is-existing" : ""}">
+            ${candidate.existing ? "In your library" : "Potential match"}
+          </span>
+          ${icon("arrow-right")}
+        </span>
+        <strong class="candidate-name">${escapeHTML(candidate.canonical_name)}</strong>
+        <div
+          class="candidate-formula formula-latex"
+          role="math"
+          aria-label="${escapeHTML(candidate.latex)}"
+        >${latexMarkup(candidate.latex, candidate.latex, true)}</div>
+        <p>${escapeHTML(candidate.summary)}</p>
+        <span class="candidate-meta">
+          <span>${escapeHTML(candidate.topic || "Mathematics")}</span>
+          <span>${confidence}% match</span>
+        </span>
+      </button>
+    `;
+  }).join("");
+}
+
+async function applyLearnedFormula(result) {
+  const formulaId = result.formula.formula.id;
+  if (state.activeMapSessionId) {
+    await api(`/api/map-sessions/${encodeURIComponent(state.activeMapSessionId)}/formulas`, {
+      method: "POST",
+      body: JSON.stringify({ formula_id: formulaId }),
+    });
+  }
+  await loadMapSessions({ preferredId: state.activeMapSessionId });
+  await selectFormula(formulaId);
+  showToast(result.created ? "Formula card created." : "Existing formula opened.");
+  for (const warning of result.warnings || []) {
+    showToast(warning, "notice");
+  }
+  const unresolvedCount = result.unresolved_dependencies?.length || 0;
+  if (unresolvedCount) {
+    showToast(
+      `${unresolvedCount} suggested prerequisite${unresolvedCount === 1 ? " was" : "s were"} not in the local library.`,
+      "notice",
+    );
+  }
+}
+
+async function chooseFormulaCandidate(candidate, button) {
+  if (!candidate || state.formulaCandidateBusy) return;
+  state.formulaCandidateBusy = true;
+  setBusy(button, true, candidate.existing ? "Opening…" : "Creating…");
+  try {
+    const result = await api("/api/learn", {
+      method: "POST",
+      body: JSON.stringify({
+        query: candidate.local_formula_id || candidate.canonical_name,
+        map_session_id: state.activeMapSessionId || "",
+      }),
+    });
+    closeDialog(elements.candidateDialog);
+    await applyLearnedFormula(result);
+    elements.globalQuery.value = "";
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    state.formulaCandidateBusy = false;
+    setBusy(button, false);
+  }
+}
+
 async function submitFormulaSearch(event) {
   event.preventDefault();
   const query = elements.globalQuery.value.trim();
@@ -1378,39 +1477,19 @@ async function submitFormulaSearch(event) {
     elements.globalQuery.focus();
     return;
   }
-  setBusy(elements.globalSubmit, true, "Searching…");
+  setBusy(elements.globalSubmit, true, "Finding formulas…");
   try {
-    const result = await api("/api/learn", {
+    const result = await api("/api/learn/candidates", {
       method: "POST",
-      body: JSON.stringify({
-        query,
-        map_session_id: state.activeMapSessionId || "",
-      }),
+      body: JSON.stringify({ query }),
     });
-    const formulaId = result.formula.formula.id;
-    if (state.activeMapSessionId) {
-      await api(`/api/map-sessions/${encodeURIComponent(state.activeMapSessionId)}/formulas`, {
-        method: "POST",
-        body: JSON.stringify({ formula_id: formulaId }),
-      });
-    }
-    await loadMapSessions({ preferredId: state.activeMapSessionId });
-    await selectFormula(formulaId);
-    showToast(result.created ? "Formula card created." : "Existing formula opened.");
-    for (const warning of result.warnings || []) {
-      showToast(warning, "notice");
-    }
-    const unresolvedCount = result.unresolved_dependencies?.length || 0;
-    if (unresolvedCount) {
-      showToast(
-        `${unresolvedCount} suggested prerequisite${unresolvedCount === 1 ? " was" : "s were"} not in the local library.`,
-        "notice",
-      );
-    }
+    state.formulaCandidates = result.candidates || [];
+    renderFormulaCandidates(query, state.formulaCandidates);
+    if (!elements.candidateDialog.open) elements.candidateDialog.showModal();
   } catch (error) {
     showToast(
       error.reasonCode === "no_reliable_source"
-        ? "No usable source material was found. Try a more specific formula name or description."
+        ? "No usable formula candidates were found. Try a more specific name or description."
         : error.message,
       "error",
     );
@@ -1538,12 +1617,18 @@ function openRelationshipExploreDialog({ edge }) {
   elements.relationshipExploreSource.textContent = edge.source_name;
   elements.relationshipExploreTarget.textContent = edge.target_name;
   elements.relationshipExploreKind.textContent = relationLabels[edge.relation] || edge.relation;
-  const origin = edge.created_by === "manual" ? "Your relationship" : "AI relationship";
-  const evidence = edge.evidence_status === "supported"
-    ? "Evidence-supported"
-    : "Unconfirmed";
-  elements.relationshipExploreOrigin.textContent = `${origin} · ${evidence}`;
-  elements.relationshipExploreNote.textContent = edge.rationale;
+  const manualConfirmed = edge.created_by === "manual" && edge.evidence_status === "supported";
+  const manualUnconfirmed = edge.created_by === "manual" && edge.evidence_status !== "supported";
+  elements.relationshipExploreOrigin.textContent = manualConfirmed
+    ? "Your relationship · AI confirmed"
+    : manualUnconfirmed
+      ? "Your relationship · AI unconfirmed"
+      : "";
+  elements.relationshipExploreOrigin.hidden = !elements.relationshipExploreOrigin.textContent;
+  elements.relationshipExploreNote.textContent = edge.rationale || "Relationship unclear.";
+  elements.relationshipExploreDescription.textContent = manualUnconfirmed
+    ? "This deep dive will preserve only the note you entered when creating the relationship."
+    : "Mathernet will create one saved exploration of how these formulas connect. You can continue the conversation below it.";
   elements.relationshipExploreDialog.showModal();
 }
 
@@ -1700,6 +1785,19 @@ async function deleteSelectedFormula() {
 
 function bindEvents() {
   elements.globalSearch.addEventListener("submit", submitFormulaSearch);
+  elements.candidateGrid.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-candidate-index]");
+    if (!button) return;
+    chooseFormulaCandidate(
+      state.formulaCandidates[Number(button.dataset.candidateIndex)],
+      button,
+    );
+  });
+  elements.candidateRetry.addEventListener("click", () => {
+    closeDialog(elements.candidateDialog);
+    elements.globalQuery.focus();
+    elements.globalQuery.select();
+  });
 
   let libraryTimer;
   elements.libraryQuery.addEventListener("input", () => {

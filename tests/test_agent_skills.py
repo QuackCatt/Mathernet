@@ -6,8 +6,11 @@ from pathlib import Path
 from mathernet.agent import FormulaAgent, stable_id
 from mathernet.agent_skills import (
     FormulaDiscovery,
+    FormulaCandidate,
+    build_relationship_deep_dive_prompt,
     load_agent_skill,
     parse_formula_discovery,
+    parse_formula_candidates,
     parse_relationship_validation,
 )
 from mathernet.errors import SynthesisError
@@ -98,6 +101,72 @@ class AgentSkillTests(unittest.TestCase):
         self.assertTrue(parsed["explanation_is_reasonable"])
         self.assertFalse(parsed["web_supported"])
         self.assertEqual(len(parsed["sources"]), 1)
+
+    def test_confirmed_manual_relationship_prompt_includes_learner_note(self):
+        prompt = json.loads(build_relationship_deep_dive_prompt(
+            {
+                "id": "edge_manual",
+                "created_by": "manual",
+                "relation": "special_case",
+                "rationale": "This is my explanation of the special case.",
+                "evidence_status": "supported",
+            },
+            [],
+        ))
+
+        self.assertEqual(
+            prompt["relationship"]["learner_note"],
+            "This is my explanation of the special case.",
+        )
+        self.assertNotIn("rationale", prompt["relationship"])
+        self.assertIn("AI-confirmed manual relationship", prompt["task"])
+
+    def test_confirmed_manual_relationship_prompt_omits_empty_learner_note(self):
+        prompt = json.loads(build_relationship_deep_dive_prompt(
+            {
+                "id": "edge_manual",
+                "created_by": "manual",
+                "relation": "special_case",
+                "rationale": "",
+                "evidence_status": "supported",
+            },
+            [],
+        ))
+
+        self.assertNotIn("learner_note", prompt["relationship"])
+        self.assertNotIn("rationale", prompt["relationship"])
+
+    def test_parses_one_to_five_distinct_formula_candidates(self):
+        candidates = parse_formula_candidates(json.dumps({
+            "candidates": [
+                {
+                    "canonical_name": "Normal distribution",
+                    "latex": "f(x)=\\frac{1}{\\sigma\\sqrt{2\\pi}}e^{-\\frac{(x-\\mu)^2}{2\\sigma^2}}",
+                    "summary": "A continuous probability distribution.",
+                    "topic": "probability",
+                    "reason": "Matches the distribution description.",
+                    "confidence": 0.92,
+                    "local_formula_id": "formula_normal",
+                },
+                {
+                    "canonical_name": "Normal distribution",
+                    "latex": "f(x)=...",
+                    "summary": "Duplicate.",
+                    "topic": "probability",
+                    "reason": "Duplicate.",
+                    "confidence": 0.5,
+                    "local_formula_id": "",
+                },
+            ],
+        }))
+
+        self.assertEqual(len(candidates), 1)
+        self.assertIsInstance(candidates[0], FormulaCandidate)
+        self.assertEqual(candidates[0].local_formula_id, "formula_normal")
+
+    def test_formula_candidate_parser_rejects_empty_results(self):
+        with self.assertRaises(SynthesisError):
+            parse_formula_candidates(json.dumps({"candidates": []}))
 
     def test_discovery_opens_an_existing_card_before_synthesis(self):
         existing = self.add_formula("formula_existing", "Existing formula", ["local alias"])

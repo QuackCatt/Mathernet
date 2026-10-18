@@ -4,8 +4,10 @@
 
 - Explain why two named formulas are mathematically connected.
 - Preserve the relationship direction from the source formula to the target formula.
-- Use the saved relationship type and rationale as the starting point, not as unquestionable truth.
-- For manually created relationships, distinguish the learner's explanation from independently supported mathematics.
+- Use the saved relationship type as the mathematical starting point.
+- For AI-created relationships, explain the connection independently.
+- For AI-confirmed manual relationships, incorporate `learner_note` as user-supplied context when present, but do not treat it as unquestionable truth.
+- Do not add a `learner_note` field when the user left the explanation empty.
 
 ## Research
 
@@ -13,7 +15,7 @@
 - Search for both formulas together and for the mathematical concept named by their relationship.
 - Prefer established mathematical references, documentation, papers, and reputable educational sources.
 - Never invent citations, quotations, URLs, people, or historical events.
-- If independent support cannot be found, return an empty `sources` array and state that the article is presenting the learner's note without external confirmation.
+- Return only source URLs that were actually found and support the explanation.
 
 ## Writing
 

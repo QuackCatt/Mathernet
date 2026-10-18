@@ -68,6 +68,57 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertFalse(response.payload["created"])
 
+    def test_formula_candidates_are_read_only_and_reuse_local_matches(self):
+        class Agent:
+            def discover_formula_candidates(self, query):
+                from mathernet.agent_skills import FormulaCandidate
+
+                return [
+                    FormulaCandidate(
+                        canonical_name="Euler's identity",
+                        latex="e^{i\\pi}+1=0",
+                        summary="A special case of Euler's formula.",
+                        topic="complex analysis",
+                        reason="Exact local match.",
+                        confidence=0.98,
+                        local_formula_id="formula_euler_identity",
+                    ),
+                    FormulaCandidate(
+                        canonical_name="Euler's formula",
+                        latex="e^{ix}=\\cos x+i\\sin x",
+                        summary="A general complex exponential identity.",
+                        topic="complex analysis",
+                        reason="A plausible nearby formula.",
+                        confidence=0.81,
+                    ),
+                ]
+
+            def learn(self, query):
+                raise AssertionError("candidate search must not learn")
+
+        self.service.agent = Agent()
+        before = self.service.revision
+        response = handle_api_request(
+            self.service,
+            "POST",
+            "/api/learn/candidates",
+            {"query": "the identity connecting five famous constants"},
+        )
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(len(response.payload["candidates"]), 2)
+        self.assertTrue(response.payload["candidates"][0]["existing"])
+        self.assertEqual(
+            response.payload["candidates"][0]["local_formula_id"],
+            "formula_euler_identity",
+        )
+        self.assertFalse(response.payload["candidates"][1]["existing"])
+        self.assertEqual(self.service.revision, before)
+        self.assertIn(
+            "/api/learn/candidates",
+            openapi_document()["paths"],
+        )
+
     def test_edge_requires_confirmation_then_accepts(self):
         created = handle_api_request(
             self.service,

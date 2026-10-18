@@ -204,10 +204,10 @@
           if (this.cutMode) this.onCutRelationship?.({ edge: link });
           else if (this.inspectMode) this.onInspectRelationship?.({ edge: link });
         });
+        const isUnconfirmedManualRelationship =
+          link.created_by === "manual" && link.evidence_status !== "supported";
         const path = svgElement("path", {
-          class: `graph-edge ${
-            link.evidence_status === "supported" ? "is-supported" : "is-unverified"
-          }`,
+          class: `graph-edge ${isUnconfirmedManualRelationship ? "is-unverified" : "is-supported"}`,
           "data-edge-id": link.id,
           "data-source-id": link.source_id,
           "data-target-id": link.target_id,

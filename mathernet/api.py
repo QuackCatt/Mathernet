@@ -82,6 +82,13 @@ def handle_api_request(
                 map_session_id=_optional_string(payload, "map_session_id"),
             )
             return ApiResponse(201 if result["created"] else 200, result)
+
+        if path == "/api/learn/candidates" and method == "POST":
+            payload = _require_body(body, {"query"}, set())
+            return ApiResponse(
+                200,
+                service.discover_formula_candidates(_required_string(payload, "query")),
+            )
         if path == "/api/export" and method == "GET":
             return ApiResponse(200, service.export_graph())
 
@@ -382,6 +389,9 @@ def openapi_document() -> dict[str, Any]:
             "/api/gateway/test-search": {"post": {"summary": "Test the configured search connection"}},
             "/api/formulas": {"get": {"summary": "Search and page formula summaries"}},
             "/api/learn": {"post": {"summary": "Create or reuse a source-backed formula card"}},
+            "/api/learn/candidates": {
+                "post": {"summary": "Find formula candidates without creating cards"}
+            },
             "/api/map-sessions": {
                 "get": {"summary": "List mind-map sessions"},
                 "post": {"summary": "Create a mind-map session"},

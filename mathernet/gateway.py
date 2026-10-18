@@ -13,6 +13,8 @@ from typing import Any
 
 from .agent_skills import (
     FORMULA_CHAT_SKILL,
+    FORMULA_CANDIDATE_SCHEMA,
+    FORMULA_CANDIDATE_SKILL,
     FORMULA_DEEP_DIVE_SCHEMA,
     FORMULA_DEEP_DIVE_SKILL,
     FORMULA_DISCOVERY_SCHEMA,
@@ -23,6 +25,8 @@ from .agent_skills import (
     RELATIONSHIP_VALIDATION_SCHEMA,
     RELATIONSHIP_VALIDATION_SKILL,
     FormulaDiscovery,
+    FormulaCandidate,
+    build_formula_candidate_prompt,
     build_formula_chat_prompt,
     build_formula_deep_dive_prompt,
     build_formula_discovery_prompt,
@@ -33,6 +37,7 @@ from .agent_skills import (
     load_agent_skill,
     parse_formula_deep_dive,
     parse_formula_discovery,
+    parse_formula_candidates,
     parse_formula_introduction,
     parse_relationship_validation,
 )
@@ -212,6 +217,19 @@ class ProviderGateway:
             json_schema=FORMULA_DISCOVERY_SCHEMA,
         )
         return parse_formula_discovery(raw)
+
+    def discover_formula_candidates(
+        self,
+        query: str,
+        library: list[dict[str, Any]],
+    ) -> list[FormulaCandidate]:
+        self._require_ai()
+        raw = self._request(
+            FORMULA_CANDIDATE_SKILL,
+            build_formula_candidate_prompt(query, library),
+            json_schema=FORMULA_CANDIDATE_SCHEMA,
+        )
+        return parse_formula_candidates(raw)
 
     def synthesize(
         self,

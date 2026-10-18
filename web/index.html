@@ -442,6 +442,33 @@
       </div>
     </dialog>
 
+    <dialog class="dialog dialog-wide candidate-dialog" id="candidate-dialog" aria-labelledby="candidate-title">
+      <div class="dialog-header">
+        <div>
+          <p class="section-kicker">Formula search</p>
+          <h2 id="candidate-title">Choose a formula</h2>
+        </div>
+        <button class="icon-button" type="button" data-close-dialog="candidate-dialog" aria-label="Close formula candidates">
+          <svg aria-hidden="true"><use href="#icon-x"></use></svg>
+        </button>
+      </div>
+      <p class="dialog-copy">
+        Mathernet found these possible formulas for your description. Select one to add it to your library and current mind map.
+      </p>
+      <div class="candidate-query">
+        <svg aria-hidden="true"><use href="#icon-search"></use></svg>
+        <span id="candidate-query"></span>
+      </div>
+      <div class="candidate-grid" id="candidate-grid" aria-live="polite"></div>
+      <div class="candidate-footer">
+        <p>Don't see the right option? Try another description.</p>
+        <button class="button button-secondary" id="candidate-retry" type="button">
+          <svg aria-hidden="true"><use href="#icon-search"></use></svg>
+          Try another description
+        </button>
+      </div>
+    </dialog>
+
     <dialog class="dialog settings-dialog" id="settings-dialog" aria-labelledby="settings-title">
       <form id="settings-form" novalidate>
         <div class="dialog-header">
@@ -626,11 +653,11 @@
         </div>
         <div class="relationship-explore-meta">
           <span id="relationship-explore-kind">Relationship</span>
-          <span id="relationship-explore-origin">AI relationship</span>
+          <span id="relationship-explore-origin" hidden></span>
         </div>
         <p id="relationship-explore-note">Relationship explanation</p>
       </div>
-      <p class="dialog-copy">
+      <p class="dialog-copy" id="relationship-explore-description">
         Mathernet will create one saved exploration of how these formulas connect. You can continue the conversation below it.
       </p>
       <div class="dialog-actions">

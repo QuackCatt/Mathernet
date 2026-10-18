@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .errors import NotFoundError, StorageError, ValidationError
+from .errors import NotFoundError, StorageError, SynthesisError, ValidationError
 from .rules import validate_bounded_text
 
 
@@ -130,6 +130,8 @@ class DeepDiveSessionStore:
         title = validate_bounded_text(payload.get("title", "Deep dive"), "title", max_length=120) or "Deep dive"
         article = self._validated_article(payload.get("article"))
         if not article:
+            if create:
+                raise SynthesisError("deep-dive generation returned no usable article")
             raise ValidationError("deep-dive article is required")
         sources = payload.get("sources", [])
         if not isinstance(sources, list):
@@ -161,6 +163,7 @@ class DeepDiveSessionStore:
             value.get("introduction", ""),
             "article.introduction",
             max_length=40_000,
+            allow_empty=True,
         )
         sections = value.get("sections", [])
         if not isinstance(sections, list):

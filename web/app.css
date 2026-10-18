@@ -1949,6 +1949,181 @@ h3 {
   width: min(920px, calc(100vw - 32px));
 }
 
+.candidate-dialog {
+  overflow: hidden;
+}
+
+.candidate-dialog .dialog-header,
+.candidate-dialog .dialog-copy,
+.candidate-query,
+.candidate-grid,
+.candidate-footer {
+  margin-inline: 24px;
+}
+
+.candidate-query {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 42px;
+  margin-top: 16px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--canvas);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.candidate-query svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+}
+
+.candidate-query span {
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.candidate-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  max-height: min(50dvh, 520px);
+  margin-top: 14px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.candidate-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  min-height: 214px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.02);
+  transition:
+    border-color var(--motion-fast) var(--ease),
+    background-color var(--motion-fast) var(--ease),
+    box-shadow var(--motion-base) var(--ease),
+    transform var(--motion-fast) var(--ease);
+}
+
+.candidate-card:hover {
+  border-color: color-mix(in srgb, var(--signal) 48%, var(--line));
+  background: color-mix(in srgb, var(--surface) 92%, var(--signal));
+  box-shadow: 0 12px 28px rgb(16 27 23 / 0.12);
+  transform: translateY(-2px);
+}
+
+.candidate-card:active {
+  transform: translateY(0) scale(0.992);
+}
+
+.candidate-card:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.candidate-card-top,
+.candidate-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.candidate-card-top svg {
+  width: 17px;
+  height: 17px;
+  color: var(--muted);
+  transition: color var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease);
+}
+
+.candidate-card:hover .candidate-card-top svg {
+  color: var(--signal);
+  transform: translateX(2px);
+}
+
+.candidate-kind {
+  display: inline-flex;
+  align-items: center;
+  min-height: 23px;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--signal) 32%, var(--line));
+  border-radius: 999px;
+  color: var(--signal);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.candidate-kind.is-existing {
+  border-color: color-mix(in srgb, var(--verified) 42%, var(--line));
+  color: var(--verified);
+}
+
+.candidate-name {
+  font-family: var(--font-display);
+  font-size: 18px;
+  line-height: 1.18;
+}
+
+.candidate-formula {
+  min-height: 52px;
+  padding: 11px 12px;
+  overflow-x: auto;
+  border: 1px solid color-mix(in srgb, var(--line) 74%, transparent);
+  border-radius: 7px;
+  background: var(--canvas);
+  font-size: 15px;
+  scrollbar-width: thin;
+}
+
+.candidate-card p {
+  display: -webkit-box;
+  min-height: 42px;
+  margin: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.candidate-meta {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.candidate-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 16px;
+  margin-bottom: 22px;
+  padding-top: 15px;
+  border-top: 1px solid var(--line);
+}
+
+.candidate-footer p {
+  margin: 0;
+  color: var(--muted);
+}
+
 .settings-dialog {
   width: min(780px, calc(100vw - 32px));
 }

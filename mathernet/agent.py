@@ -3,7 +3,11 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 
-from .agent_skills import KNOWN_RELATIONSHIP_RULES, FormulaDiscovery
+from .agent_skills import (
+    KNOWN_RELATIONSHIP_RULES,
+    FormulaCandidate,
+    FormulaDiscovery,
+)
 from .errors import NotFoundError, RefusalError, SynthesisError, ValidationError
 from .llm import Synthesizer, SynthesisDependency, SynthesisResult
 from .models import (
@@ -45,6 +49,45 @@ class FormulaAgent:
     def lookup(self, query: str) -> FormulaNode | None:
         enforce_request_safety(query)
         return self.repository.find_formula(query)
+
+    def discover_formula_candidates(self, query: str) -> list[FormulaCandidate]:
+        enforce_request_safety(query)
+        discover_candidates = getattr(
+            self.synthesizer,
+            "discover_formula_candidates",
+            None,
+        )
+        if not callable(discover_candidates):
+            raise SynthesisError("AI formula candidate search is not configured")
+        catalog = [
+            {
+                "id": node.id,
+                "name": node.name,
+                "aliases": node.aliases,
+                "latex": node.latex,
+            }
+            for node in self.repository.list_formulas()
+        ]
+        candidates = discover_candidates(query, catalog)
+        if not isinstance(candidates, list):
+            raise SynthesisError("AI formula candidate search returned an invalid result")
+        resolved = []
+        for candidate in candidates[:5]:
+            if not isinstance(candidate, FormulaCandidate):
+                continue
+            local_match = None
+            if candidate.local_formula_id:
+                try:
+                    local_match = self.repository.get_formula(candidate.local_formula_id)
+                except NotFoundError:
+                    local_match = None
+            if local_match is None:
+                local_match = self.repository.find_formula(candidate.canonical_name)
+            candidate.local_formula_id = local_match.id if local_match else ""
+            resolved.append(candidate)
+        if not resolved:
+            raise SynthesisError("AI formula candidate search returned no usable candidates")
+        return resolved
 
     def learn(self, query: str, map_context: dict | None = None) -> LearnResult:
         enforce_request_safety(query)

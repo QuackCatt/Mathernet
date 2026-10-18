@@ -36,6 +36,7 @@ from .rules import (
 
 
 class LearningAgent(Protocol):
+    def discover_formula_candidates(self, query: str) -> list[Any]: ...
     def learn(self, query: str, map_context: dict[str, Any] | None = None) -> LearnResult: ...
 
 
@@ -510,6 +511,41 @@ class MathernetService:
             "revision": self.revision,
         }
 
+    def discover_formula_candidates(self, query: str) -> dict[str, Any]:
+        query = validate_bounded_text(query, "query", max_length=MAX_QUERY_LENGTH)
+        if self.agent is None:
+            raise ValidationError("online learning is not configured for this service")
+        candidates = self.agent.discover_formula_candidates(query)
+        payload = []
+        seen = set()
+        for candidate in candidates[:5]:
+            item = candidate if isinstance(candidate, dict) else candidate.to_dict()
+            canonical_name = str(item.get("canonical_name", "")).strip()
+            key = formula_key(canonical_name)
+            if not canonical_name or not str(item.get("latex", "")).strip() or key in seen:
+                continue
+            seen.add(key)
+            local_formula_id = str(item.get("local_formula_id", "")).strip()
+            existing = None
+            if local_formula_id:
+                try:
+                    existing = self.repository.get_formula(local_formula_id)
+                except NotFoundError:
+                    existing = None
+            payload.append({
+                "canonical_name": canonical_name,
+                "latex": str(item.get("latex", "")).strip(),
+                "summary": str(item.get("summary", "")).strip(),
+                "topic": str(item.get("topic", "")).strip(),
+                "reason": str(item.get("reason", "")).strip(),
+                "confidence": min(1.0, max(0.0, float(item.get("confidence", 0) or 0))),
+                "local_formula_id": existing.id if existing else "",
+                "existing": existing is not None,
+            })
+        if not payload:
+            raise SynthesisError("AI formula candidate search returned no usable candidates")
+        return {"query": query, "candidates": payload}
+
     def _learning_map_context(self, map_session_id: str | None) -> dict[str, Any]:
         if not map_session_id:
             return {"session_id": "", "formula_ids": [], "formulas": [], "relationships": []}
@@ -679,13 +715,13 @@ class MathernetService:
         session = self.deep_dive_sessions.get(node.id, session_id)
         messages = list(session.get("messages", []))
         messages.append({"role": "user", "content": message})
+        session = self.deep_dive_sessions.append_message(node.id, session_id, "user", message)
         reply = self._require_ai_gateway().chat(
             self._formula_context(node),
             {"title": session["title"], "article": session["article"], "sources": session["sources"]},
             messages[-20:],
         )
         reply = validate_bounded_text(reply, "reply", max_length=MAX_SESSION_REPLY_LENGTH)
-        session = self.deep_dive_sessions.append_message(node.id, session_id, "user", message)
         session = self.deep_dive_sessions.append_message(node.id, session_id, "assistant", reply)
         return {"reply": reply, "session": session}
 
@@ -697,25 +733,21 @@ class MathernetService:
         edge = self.repository.get_edge(edge_id)
         relationship = self._relationship_context(edge)
         sources = self._relationship_sources(edge)
+        if edge.created_by == "manual" and edge.evidence_status != EdgeEvidence.SUPPORTED:
+            generated = self._manual_relationship_note(edge)
+            return self.deep_dive_sessions.create(
+                self._relationship_session_key(edge.id),
+                {
+                    "title": generated["title"],
+                    "article": generated["article"],
+                    "sources": [],
+                    "warnings": [],
+                },
+            )
+
         gateway = self._require_ai_gateway()
-        try:
-            generated = gateway.deep_dive_relationship(relationship, sources)
-        except SynthesisError:
-            if edge.created_by != "manual":
-                raise
-            generated = self._manual_relationship_note(edge)
-        manual_without_support = (
-            edge.created_by == "manual"
-            and not generated.get("sources")
-            and not edge.sources
-        )
-        if manual_without_support:
-            generated = self._manual_relationship_note(edge)
-        merged_sources = (
-            []
-            if manual_without_support
-            else self._merge_sources(sources, generated.get("sources", []))
-        )
+        generated = gateway.deep_dive_relationship(relationship, sources)
+        merged_sources = self._merge_sources(sources, generated.get("sources", []))
         return self.deep_dive_sessions.create(
             self._relationship_session_key(edge.id),
             {
@@ -756,6 +788,10 @@ class MathernetService:
         message: str,
     ) -> dict[str, Any]:
         edge = self.repository.get_edge(edge_id)
+        if edge.created_by == "manual" and edge.evidence_status != EdgeEvidence.SUPPORTED:
+            raise ValidationError(
+                "AI chat is disabled for an unconfirmed manual relationship"
+            )
         message = validate_bounded_text(
             message,
             "message",
@@ -765,6 +801,12 @@ class MathernetService:
         session = self.deep_dive_sessions.get(owner_id, session_id)
         messages = list(session.get("messages", []))
         messages.append({"role": "user", "content": message})
+        session = self.deep_dive_sessions.append_message(
+            owner_id,
+            session_id,
+            "user",
+            message,
+        )
         reply = self._require_ai_gateway().chat(
             self._relationship_context(edge),
             {
@@ -778,12 +820,6 @@ class MathernetService:
             reply,
             "reply",
             max_length=MAX_SESSION_REPLY_LENGTH,
-        )
-        session = self.deep_dive_sessions.append_message(
-            owner_id,
-            session_id,
-            "user",
-            message,
         )
         session = self.deep_dive_sessions.append_message(
             owner_id,
@@ -910,10 +946,7 @@ class MathernetService:
 
     @staticmethod
     def _manual_relationship_note(edge: DependencyEdge) -> dict[str, Any]:
-        introduction = edge.rationale or (
-            "No explanation was provided for this relationship, and no independent "
-            "web source was found."
-        )
+        introduction = edge.rationale or "Relationship unclear."
         return {
             "title": "Your relationship note",
             "article": {
@@ -921,9 +954,7 @@ class MathernetService:
                 "sections": [],
             },
             "sources": [],
-            "warnings": [
-                "No independent web source was found, so this session preserves only your explanation."
-            ],
+            "warnings": [],
         }
 
     def _require_ai_gateway(self) -> DeepDiveGateway:
