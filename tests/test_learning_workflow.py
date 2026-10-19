@@ -35,13 +35,13 @@ class LearningWorkflowTests(unittest.TestCase):
                 service,
                 "POST",
                 "/api/learn",
-                {"query": "quadratic formula"},
+                {"query": "synthetic concept"},
             )
             self.assertEqual(created.status, 201)
             self.assertTrue(created.payload["created"])
             self.assertEqual(
                 created.payload["formula"]["formula"]["name"],
-                "quadratic formula",
+                "synthetic concept",
             )
             self.assertEqual(len(created.payload["formula"]["sources"]), 1)
             self.assertIn(
@@ -53,12 +53,12 @@ class LearningWorkflowTests(unittest.TestCase):
                 service,
                 "POST",
                 "/api/learn",
-                {"query": "quadratic formula"},
+                {"query": "synthetic concept"},
             )
             self.assertEqual(reused.status, 200)
             self.assertFalse(reused.payload["created"])
 
-            persisted = build_service(settings).get_formula_card("quadratic formula")
+            persisted = build_service(settings).get_formula_card("synthetic concept")
             self.assertEqual(
                 persisted["formula"]["ai_module"]["summary"],
                 created.payload["formula"]["formula"]["ai_module"]["summary"],

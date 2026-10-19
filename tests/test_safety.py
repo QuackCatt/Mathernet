@@ -1,18 +1,15 @@
-import json
 import unittest
-from pathlib import Path
 
 from mathernet.errors import RefusalError
 from mathernet.models import RefusalReason
 from mathernet.safety import assess_request, enforce_request_safety
-
-
-GOLD = json.loads((Path(__file__).parent / "gold_cases.json").read_text(encoding="utf-8"))
+from tests.test_data import gold_cases
 
 
 class SafetyTests(unittest.TestCase):
     def test_frozen_refusal_cases(self):
-        for case in GOLD["safety_cases"][:2] + [GOLD["safety_cases"][3]]:
+        cases = gold_cases()["safety_cases"]
+        for case in cases[:2] + [cases[3]]:
             with self.subTest(case=case["id"]):
                 decision = assess_request(case["request"])
                 self.assertFalse(decision.allowed)

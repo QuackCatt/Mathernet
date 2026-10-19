@@ -42,8 +42,8 @@ class RetrievalTests(unittest.TestCase):
     def test_mcp_stdio_calls_search_tool(self):
         fixture = Path(__file__).parent / "fixtures" / "fake_mcp_server.py"
         with MCPStdioClient((sys.executable, str(fixture)), tool_name="search") as client:
-            results = client.search("quadratic formula")
-        self.assertEqual(results[0].title, "Quadratic formula")
+            results = client.search("synthetic concept")
+        self.assertEqual(results[0].title, "Synthetic concept")
         self.assertEqual(results[0].publisher, "Wikipedia")
 
     def test_cached_sources_are_used_when_retrieval_is_unavailable(self):
@@ -52,18 +52,18 @@ class RetrievalTests(unittest.TestCase):
                 raise RetrievalError("offline")
 
         result = SearchResult(
-            "Quadratic formula",
-            "https://example.edu/quadratic",
+            "Synthetic concept",
+            "https://example.edu/synthetic-concept",
             "Example University",
             "A cached authoritative excerpt.",
         )
         with tempfile.TemporaryDirectory() as directory:
             cache_path = Path(directory) / "search_cache.json"
             online = CachingSearchProvider(StaticSearchProvider([result]), cache_path)
-            self.assertEqual(online.search("Quadratic formula")[0].url, result.url)
+            self.assertEqual(online.search("Synthetic concept")[0].url, result.url)
 
             offline = CachingSearchProvider(UnavailableProvider(), cache_path)
-            cached = offline.search("Quadratic formula")
+            cached = offline.search("Synthetic concept")
         self.assertEqual(cached, [result])
 
     def test_cached_sources_are_used_when_server_cannot_start(self):

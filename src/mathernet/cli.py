@@ -71,7 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate = subparsers.add_parser("evaluate", help="run the frozen acceptance suite")
     evaluate.add_argument(
         "--gold",
-        default=str(Path(__file__).resolve().parent.parent / "tests" / "gold_cases.json"),
+        required=True,
         help="path to the frozen gold-case JSON",
     )
     evaluate.add_argument(

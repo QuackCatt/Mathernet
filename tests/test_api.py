@@ -1,13 +1,12 @@
-import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from mathernet.api import handle_api_request, openapi_document, resolve_web_asset
 from mathernet.errors import NotFoundError
-from mathernet.models import GraphDocument
 from mathernet.repository import GraphRepository
 from mathernet.services import MathernetService
+from tests.test_data import synthetic_graph_payload
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,11 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 class ApiTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
-        payload = json.loads(
-            (ROOT / "tests" / "fixtures" / "demo_graph.json").read_text(encoding="utf-8")
-        )
         self.repository = GraphRepository(Path(self.temporary.name) / "graph.json")
-        self.repository.document = GraphDocument.from_dict(payload)
+        self.repository.document = self.repository.document.from_dict(synthetic_graph_payload())
         self.repository.save()
         self.service = MathernetService(self.repository)
 
@@ -44,7 +40,7 @@ class ApiTests(unittest.TestCase):
             "/api/formulas/formula_euler_identity",
         )
         self.assertEqual(card.status, 200)
-        self.assertEqual(card.payload["formula"]["name"], "Euler's identity")
+        self.assertEqual(card.payload["formula"]["name"], "Concept Gamma")
         self.assertIn("/api/edges/{edge_id}/confirm", openapi_document()["paths"])
 
     def test_learn_reuses_an_existing_formula_with_a_success_status(self):
@@ -63,7 +59,7 @@ class ApiTests(unittest.TestCase):
             self.service,
             "POST",
             "/api/learn",
-            {"query": "Euler's identity"},
+            {"query": "Concept Gamma"},
         )
         self.assertEqual(response.status, 200)
         self.assertFalse(response.payload["created"])
@@ -75,19 +71,19 @@ class ApiTests(unittest.TestCase):
 
                 return [
                     FormulaCandidate(
-                        canonical_name="Euler's identity",
-                        latex="e^{i\\pi}+1=0",
-                        summary="A special case of Euler's formula.",
-                        topic="complex analysis",
+                        canonical_name="Concept Gamma",
+                        latex="c=d",
+                        summary="Synthetic local match.",
+                        topic="test-topic",
                         reason="Exact local match.",
                         confidence=0.98,
                         local_formula_id="formula_euler_identity",
                     ),
                     FormulaCandidate(
-                        canonical_name="Euler's formula",
-                        latex="e^{ix}=\\cos x+i\\sin x",
-                        summary="A general complex exponential identity.",
-                        topic="complex analysis",
+                        canonical_name="Concept Delta",
+                        latex="d=e",
+                        summary="Synthetic nearby candidate.",
+                        topic="test-topic",
                         reason="A plausible nearby formula.",
                         confidence=0.81,
                     ),
@@ -102,7 +98,7 @@ class ApiTests(unittest.TestCase):
             self.service,
             "POST",
             "/api/learn/candidates",
-            {"query": "the identity connecting five famous constants"},
+            {"query": "a synthetic relation near Concept Gamma"},
         )
 
         self.assertEqual(response.status, 200)
@@ -128,8 +124,8 @@ class ApiTests(unittest.TestCase):
                 "source_id": "formula_taylor_series",
                 "target_id": "formula_complex_exponential",
                 "relation": "prerequisite",
-                "rationale": "Series foundations support the complex exponential.",
-                "source_ids": ["src_taylor_series", "src_complex_exponential"],
+                "rationale": "Synthetic prerequisite rationale.",
+                "source_ids": ["src_alpha", "src_beta"],
             },
         )
         self.assertEqual(created.status, 201)

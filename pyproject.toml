@@ -15,5 +15,12 @@ dependencies = []
 [project.scripts]
 mathernet = "mathernet.cli:main"
 
+[tool.setuptools]
+package-dir = {"" = "src"}
+
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["mathernet*"]
+
+[tool.setuptools.package-data]
+mathernet = ["skills/*.md"]

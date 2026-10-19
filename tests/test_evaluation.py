@@ -19,6 +19,7 @@ from mathernet.models import (
     VerificationStatus,
 )
 from mathernet.normalization import formula_key
+from tests.test_data import gold_cases
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,9 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class EvaluationTests(unittest.TestCase):
     def test_complete_gold_graph_passes_all_metrics(self):
-        import json
-
-        gold = json.loads((ROOT / "tests" / "gold_cases.json").read_text(encoding="utf-8"))
+        gold = gold_cases()
         source = SourceRecord(
             "src_gold",
             "Authoritative source",
@@ -100,6 +99,11 @@ class EvaluationTests(unittest.TestCase):
             root = Path(directory)
             graph_path = root / "graph.json"
             report_path = root / "evaluation.json"
+            gold_path = root / "gold_cases.json"
+            gold_path.write_text(
+                json.dumps(gold_cases()),
+                encoding="utf-8",
+            )
             with patch.dict(
                 os.environ,
                 {"MATHERNET_DATA_PATH": str(graph_path)},
@@ -109,7 +113,7 @@ class EvaluationTests(unittest.TestCase):
                     [
                         "evaluate",
                         "--gold",
-                        str(ROOT / "tests" / "gold_cases.json"),
+                        str(gold_path),
                         "--output",
                         str(report_path),
                     ]

@@ -18,10 +18,10 @@ for line in sys.stdin:
                         {
                             "results": [
                                 {
-                                    "title": "Quadratic formula",
-                                    "url": "https://en.wikipedia.org/wiki/Quadratic_formula",
+                                    "title": "Synthetic concept",
+                                    "url": "https://example.com/synthetic-concept",
                                     "publisher": "Wikipedia",
-                                    "excerpt": "The quadratic formula gives solutions of a quadratic equation.",
+                                    "excerpt": "Synthetic source excerpt used only by the automated tests.",
                                 }
                             ]
                         }

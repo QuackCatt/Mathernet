@@ -7,9 +7,9 @@ from mathernet.agent_skills import load_agent_skill, parse_formula_introduction
 from mathernet.api import handle_api_request, openapi_document
 from mathernet.errors import SynthesisError
 from mathernet.formula_introductions import FormulaIntroductionStore
-from mathernet.models import GraphDocument
 from mathernet.repository import GraphRepository
 from mathernet.services import MathernetService
+from tests.test_data import synthetic_graph_payload
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,11 +28,8 @@ class FakeIntroductionGateway:
 class FormulaIntroductionTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
-        payload = json.loads(
-            (ROOT / "tests" / "fixtures" / "demo_graph.json").read_text(encoding="utf-8")
-        )
         self.repository = GraphRepository(Path(self.temporary.name) / "graph.json")
-        self.repository.document = GraphDocument.from_dict(payload)
+        self.repository.document = self.repository.document.from_dict(synthetic_graph_payload())
         self.repository.save()
         self.gateway = FakeIntroductionGateway()
         self.introductions = FormulaIntroductionStore(

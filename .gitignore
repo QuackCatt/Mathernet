@@ -155,6 +155,15 @@ activemq-data/
 /data/
 /tmp/
 /output/
+**/data/
+**/gateway.json
+**/map_sessions.json
+**/deep_dive_sessions.json
+**/formula_introductions.json
+**/search_cache.json
+**/mathernet.json
+**/.env
+!**/.env.example
 .venv
 env/
 venv/

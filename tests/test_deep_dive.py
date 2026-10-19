@@ -7,9 +7,9 @@ from mathernet.agent_skills import parse_formula_deep_dive
 from mathernet.api import handle_api_request, openapi_document
 from mathernet.deep_dive_sessions import DeepDiveSessionStore
 from mathernet.errors import NotFoundError, SynthesisError
-from mathernet.models import GraphDocument
 from mathernet.repository import GraphRepository
 from mathernet.services import MathernetService
+from tests.test_data import synthetic_graph_payload
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -94,11 +94,8 @@ class FakeDeepDiveGateway:
 class DeepDiveTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
-        payload = json.loads(
-            (ROOT / "tests" / "fixtures" / "demo_graph.json").read_text(encoding="utf-8")
-        )
         self.repository = GraphRepository(Path(self.temporary.name) / "graph.json")
-        self.repository.document = GraphDocument.from_dict(payload)
+        self.repository.document = self.repository.document.from_dict(synthetic_graph_payload())
         self.repository.save()
         self.gateway = FakeDeepDiveGateway()
         self.sessions = DeepDiveSessionStore(Path(self.temporary.name) / "sessions.json")
@@ -306,7 +303,7 @@ class DeepDiveTests(unittest.TestCase):
             source_ref="formula_taylor_series",
             target_ref="formula_complex_exponential",
             relation="derivation_basis",
-            rationale="The Taylor expansion is my chosen route to the complex exponential.",
+            rationale="Synthetic manual rationale for this test relationship.",
             source_ids=[],
             manual=True,
         )
@@ -320,7 +317,7 @@ class DeepDiveTests(unittest.TestCase):
         self.assertEqual(edge["evidence_status"], "unverified")
         self.assertEqual(
             created.payload["article"]["introduction"],
-            "The Taylor expansion is my chosen route to the complex exponential.",
+            "Synthetic manual rationale for this test relationship.",
         )
         self.assertEqual(created.payload["sources"], [])
         self.assertEqual(created.payload["warnings"], [])
@@ -386,7 +383,7 @@ class DeepDiveTests(unittest.TestCase):
             source_ref="formula_taylor_series",
             target_ref="formula_complex_exponential",
             relation="derivation_basis",
-            rationale="The Taylor expansion is my chosen route to the complex exponential.",
+            rationale="Synthetic manual rationale for this test relationship.",
             source_ids=[],
             manual=True,
         )
@@ -403,7 +400,7 @@ class DeepDiveTests(unittest.TestCase):
         self.assertEqual(len(self.gateway.relationship_calls), 1)
         self.assertEqual(
             self.gateway.relationship_calls[0][0]["rationale"],
-            "The Taylor expansion is my chosen route to the complex exponential.",
+            "Synthetic manual rationale for this test relationship.",
         )
 
     def test_ai_relationship_without_sources_still_generates_ai_content(self):

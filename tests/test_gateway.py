@@ -31,26 +31,26 @@ class GatewayTests(unittest.TestCase):
             "/api/gateway",
             {
                 "provider": "deepseek",
-                "api_key": "sk-1234567890",
+                "api_key": "synthetic-test-token",
                 "search_engine": "google",
-                "search_api_key": "search-secret",
+                "search_api_key": "synthetic-search-token",
                 "search_engine_id": "engine-id",
             },
         )
         self.assertEqual(response.status, 200)
         self.assertEqual(response.payload["provider"], "deepseek")
-        self.assertNotIn("sk-1234567890", json.dumps(response.payload))
-        self.assertNotIn("search-secret", json.dumps(response.payload))
-        self.assertTrue(response.payload["api_key_hint"].startswith("sk-"))
+        self.assertNotIn("synthetic-test-token", json.dumps(response.payload))
+        self.assertNotIn("synthetic-search-token", json.dumps(response.payload))
+        self.assertTrue(response.payload["api_key_hint"].startswith("syn"))
 
         stored = json.loads((Path(self.temporary.name) / "gateway.json").read_text())
-        self.assertEqual(stored["api_key"], "sk-1234567890")
+        self.assertEqual(stored["api_key"], "synthetic-test-token")
 
     def test_blank_secret_keeps_existing_key(self):
         self.store.save(
             GatewayConfig(
                 provider="deepseek",
-                api_key="secret-value",
+                api_key="synthetic-existing-token",
                 search_engine="baidu",
             )
         )
@@ -60,15 +60,15 @@ class GatewayTests(unittest.TestCase):
             "/api/gateway",
             {"provider": "deepseek", "api_key": "", "search_engine": "baidu"},
         )
-        self.assertEqual(response.payload["api_key_hint"], "sec…ue")
-        self.assertEqual(self.store.load().api_key, "secret-value")
+        self.assertEqual(response.payload["api_key_hint"], "syn…en")
+        self.assertEqual(self.store.load().api_key, "synthetic-existing-token")
 
     def test_failed_connection_test_persists_check_settings(self):
         response = handle_api_request(
             self.service,
             "PATCH",
             "/api/gateway",
-            {"provider": "openrouter", "api_key": "bad-key", "model": "openai/gpt-4o-mini"},
+            {"provider": "openrouter", "api_key": "synthetic-invalid-token", "model": "openai/gpt-4o-mini"},
         )
         self.assertEqual(response.payload["ai_connection_status"], "unknown")
 
@@ -89,7 +89,7 @@ class GatewayTests(unittest.TestCase):
             self.service,
             "PATCH",
             "/api/gateway",
-            {"provider": "deepseek", "api_key": "good-key"},
+            {"provider": "deepseek", "api_key": "synthetic-valid-token"},
         )
         with patch(
             "mathernet.services.ProviderGateway.test_connection",
@@ -146,7 +146,7 @@ class GatewayTests(unittest.TestCase):
                 )
 
         gateway = ProviderGateway(
-            GatewayConfig(provider="deepseek", api_key="test-key")
+            GatewayConfig(provider="deepseek", api_key="synthetic-test-token")
         )
         with patch("mathernet.gateway.adapter_for_config", return_value=FakeAdapter()):
             gateway.deep_dive({"name": "Test formula"}, [])
@@ -170,7 +170,7 @@ class GatewayTests(unittest.TestCase):
                 )
 
         gateway = ProviderGateway(
-            GatewayConfig(provider="openrouter", api_key="test-key", model="openai/gpt-4o-mini")
+            GatewayConfig(provider="openrouter", api_key="synthetic-test-token", model="openai/gpt-4o-mini")
         )
         with patch("mathernet.gateway.adapter_for_config", return_value=FakeAdapter()):
             introduction = gateway.introduce({"name": "Test formula"}, [])
@@ -203,7 +203,7 @@ class GatewayTests(unittest.TestCase):
                 )
 
         gateway = ProviderGateway(
-            GatewayConfig(provider="openrouter", api_key="test-key", model="openai/gpt-4o-mini")
+            GatewayConfig(provider="openrouter", api_key="synthetic-test-token", model="openai/gpt-4o-mini")
         )
         with patch("mathernet.gateway.adapter_for_config", return_value=FakeAdapter()):
             validation = gateway.validate_relationship(

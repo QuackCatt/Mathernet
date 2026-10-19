@@ -75,7 +75,7 @@ class ProviderAdapterTests(unittest.TestCase):
 
     def test_deepseek_uses_managed_model_and_openai_chat_protocol(self):
         transport = RecordingTransport()
-        config = resolve_provider_config(provider="deepseek", api_key="secret", model="")
+        config = resolve_provider_config(provider="deepseek", api_key="synthetic-token", model="")
         adapter = adapter_for_config(config, transport=transport)
         self.assertIsInstance(adapter, OpenAIChatAdapter)
         self.assertEqual(config.model, "deepseek-chat")
@@ -93,7 +93,7 @@ class ProviderAdapterTests(unittest.TestCase):
         call = transport.calls[0]
         self.assertEqual(response.text, "connected")
         self.assertEqual(call["endpoint"], "https://api.deepseek.com/v1/chat/completions")
-        self.assertEqual(call["headers"]["Authorization"], "Bearer secret")
+        self.assertEqual(call["headers"]["Authorization"], "Bearer synthetic-token")
         self.assertEqual(call["payload"]["model"], "deepseek-chat")
         self.assertEqual(call["payload"]["response_format"], {"type": "json_object"})
 
@@ -101,7 +101,7 @@ class ProviderAdapterTests(unittest.TestCase):
         transport = RecordingTransport()
         config = resolve_provider_config(
             provider="openrouter",
-            api_key="router-secret",
+            api_key="synthetic-router-token",
             model="openai/gpt-4o-mini",
         )
         adapter = adapter_for_config(config, transport=transport)
@@ -117,7 +117,7 @@ class ProviderAdapterTests(unittest.TestCase):
 
         call = transport.calls[0]
         self.assertEqual(call["endpoint"], "https://openrouter.ai/api/v1/chat/completions")
-        self.assertEqual(call["headers"]["Authorization"], "Bearer router-secret")
+        self.assertEqual(call["headers"]["Authorization"], "Bearer synthetic-router-token")
         self.assertEqual(call["headers"]["HTTP-Referer"], "http://127.0.0.1")
         self.assertEqual(call["headers"]["X-Title"], "Mathernet")
         self.assertEqual(call["payload"]["model"], "openai/gpt-4o-mini")
@@ -127,13 +127,13 @@ class ProviderAdapterTests(unittest.TestCase):
 
     def test_openrouter_model_is_required(self):
         with self.assertRaisesRegex(Exception, "model is required"):
-            resolve_provider_config(provider="openrouter", api_key="secret", model="")
+            resolve_provider_config(provider="openrouter", api_key="synthetic-token", model="")
 
     def test_retries_transient_provider_overload(self):
         transport = FlakyTransport()
         config = resolve_provider_config(
             provider="openrouter",
-            api_key="secret",
+            api_key="synthetic-token",
             model="nvidia/nemotron-3-ultra-550b-a55b:free",
         )
         adapter = adapter_for_config(
@@ -163,11 +163,11 @@ class ProviderAdapterTests(unittest.TestCase):
                 ]
             }),
         ) as open_url:
-            models = fetch_provider_models("openrouter", "secret")
+            models = fetch_provider_models("openrouter", "synthetic-token")
 
         request = open_url.call_args.args[0]
         self.assertEqual(request.full_url, "https://openrouter.ai/api/v1/models")
-        self.assertEqual(request.get_header("Authorization"), "Bearer secret")
+        self.assertEqual(request.get_header("Authorization"), "Bearer synthetic-token")
         self.assertEqual(
             [model["id"] for model in models],
             ["openai/gpt-4o-mini", "z-ai/glm-5.2"],
@@ -180,7 +180,7 @@ class ProviderConfigCompatibilityTests(unittest.TestCase):
             path = Path(directory) / "gateway.json"
             path.write_text(json.dumps({
                 "provider": "deepseek",
-                "api_key": "secret",
+                "api_key": "synthetic-token",
                 "model": "",
             }))
             config = GatewayStore(path).load()
@@ -193,7 +193,7 @@ class ProviderConfigCompatibilityTests(unittest.TestCase):
     def test_switching_provider_replaces_the_provider_preset(self):
         with tempfile.TemporaryDirectory() as directory:
             store = GatewayStore(Path(directory) / "gateway.json")
-            store.save(GatewayConfig(provider="deepseek", api_key="deepseek-key"))
+            store.save(GatewayConfig(provider="deepseek", api_key="synthetic-deepseek-token"))
             service = MathernetService(
                 GraphRepository(Path(directory) / "graph.json"),
                 gateway_store=store,
@@ -204,7 +204,7 @@ class ProviderConfigCompatibilityTests(unittest.TestCase):
                 "/api/gateway",
                 {
                     "provider": "openrouter",
-                    "api_key": "router-key",
+                    "api_key": "synthetic-router-token",
                     "model": "openai/gpt-4o-mini",
                 },
             )
