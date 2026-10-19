@@ -1,11 +1,5 @@
-import json
-import os
-import tempfile
 import unittest
-from pathlib import Path
-from unittest.mock import patch
 
-from mathernet.cli import main
 from mathernet.evaluation import evaluate_graph
 from mathernet.models import (
     AIModule,
@@ -20,10 +14,6 @@ from mathernet.models import (
 )
 from mathernet.normalization import formula_key
 from tests.test_data import gold_cases
-
-
-ROOT = Path(__file__).resolve().parents[1]
-
 
 class EvaluationTests(unittest.TestCase):
     def test_complete_gold_graph_passes_all_metrics(self):
@@ -94,34 +84,14 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(report.source_cards_pass, 10)
         self.assertEqual(report.safety_pass, 4)
 
-    def test_evaluate_command_writes_report_and_failure_status(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            graph_path = root / "graph.json"
-            report_path = root / "evaluation.json"
-            gold_path = root / "gold_cases.json"
-            gold_path.write_text(
-                json.dumps(gold_cases()),
-                encoding="utf-8",
-            )
-            with patch.dict(
-                os.environ,
-                {"MATHERNET_DATA_PATH": str(graph_path)},
-                clear=False,
-            ):
-                exit_code = main(
-                    [
-                        "evaluate",
-                        "--gold",
-                        str(gold_path),
-                        "--output",
-                        str(report_path),
-                    ]
-                )
-            self.assertEqual(exit_code, 1)
-            report = json.loads(report_path.read_text(encoding="utf-8"))
-            self.assertFalse(report["overall_pass"])
-            self.assertEqual(report["safety_total"], 4)
+    def test_empty_graph_fails_acceptance_evaluation(self):
+        report = evaluate_graph(
+            GraphDocument(),
+            gold_cases(),
+            persistence_pass=True,
+        )
+        self.assertFalse(report.overall_pass)
+        self.assertEqual(report.safety_total, 4)
 
 
 if __name__ == "__main__":

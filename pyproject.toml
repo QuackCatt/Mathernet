@@ -13,7 +13,7 @@ authors = [{ name = "Mathernet team" }]
 dependencies = []
 
 [project.scripts]
-mathernet = "mathernet.cli:main"
+mathernet = "mathernet.launcher:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -23,4 +23,9 @@ where = ["src"]
 include = ["mathernet*"]
 
 [tool.setuptools.package-data]
-mathernet = ["skills/*.md"]
+mathernet = [
+    "skills/*.md",
+    "web/*",
+    "web/vendor/katex/*",
+    "web/vendor/katex/fonts/*",
+]

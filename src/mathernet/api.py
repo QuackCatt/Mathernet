@@ -25,7 +25,7 @@ from .services import MathernetService
 
 LOGGER = logging.getLogger(__name__)
 MAX_REQUEST_BODY_BYTES = 1_000_000
-DEFAULT_WEB_ROOT = Path(__file__).resolve().parent.parent / "web"
+DEFAULT_WEB_ROOT = Path(__file__).resolve().with_name("web")
 
 
 @dataclass(slots=True)

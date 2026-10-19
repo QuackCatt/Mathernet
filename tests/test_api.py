@@ -2,7 +2,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mathernet.api import handle_api_request, openapi_document, resolve_web_asset
+from mathernet.api import (
+    DEFAULT_WEB_ROOT,
+    handle_api_request,
+    openapi_document,
+    resolve_web_asset,
+)
 from mathernet.errors import NotFoundError
 from mathernet.repository import GraphRepository
 from mathernet.services import MathernetService
@@ -186,7 +191,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status, 204)
 
     def test_static_web_assets_resolve_only_inside_the_web_root(self):
-        web_root = ROOT / "web"
+        web_root = DEFAULT_WEB_ROOT
         self.assertEqual(resolve_web_asset(web_root, "/"), web_root / "index.html")
         self.assertEqual(resolve_web_asset(web_root, "/app.js"), web_root / "app.js")
         with self.assertRaises(NotFoundError):
