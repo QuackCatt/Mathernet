@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import json
 import time
 import urllib.error
@@ -149,7 +150,12 @@ class UrllibProviderTransport:
             raise SynthesisError(
                 f"AI provider request failed: HTTP {error.code}: {message or body[:500] or error}"
             ) from error
-        except (urllib.error.URLError, OSError, json.JSONDecodeError) as error:
+        except (
+            urllib.error.URLError,
+            OSError,
+            json.JSONDecodeError,
+            http.client.HTTPException,
+        ) as error:
             raise SynthesisError(f"AI provider request failed: {error}") from error
 
 
@@ -159,7 +165,7 @@ class ProviderAdapter(ABC):
         config: ResolvedProviderConfig,
         transport: ProviderTransport | None = None,
         timeout_seconds: float = 60,
-        retry_attempts: int = 1,
+        retry_attempts: int = 2,
         retry_delay_seconds: float = 0.75,
     ):
         self.config = config
@@ -215,12 +221,11 @@ class OpenAIChatAdapter(ProviderAdapter):
                 {"role": "user", "content": request.user_prompt or request.system_prompt},
             ],
             "temperature": request.temperature,
-            "max_tokens": 4096,
         }
+        if self.config.provider != "openrouter":
+            payload["max_tokens"] = 4096
         if request.json_schema is not None and self.config.structured_json:
             payload["response_format"] = {"type": "json_object"}
-        if self.config.provider == "openrouter":
-            payload["reasoning"] = {"effort": "medium"}
         return payload
 
     def with_auth_headers(self, headers: dict[str, str], request: ProviderRequest) -> None:
@@ -316,7 +321,7 @@ def adapter_for_config(
     config: ResolvedProviderConfig,
     transport: ProviderTransport | None = None,
     timeout_seconds: float = 60,
-    retry_attempts: int = 1,
+    retry_attempts: int = 2,
     retry_delay_seconds: float = 0.75,
 ) -> ProviderAdapter:
     adapter_type = ADAPTERS.get(config.api_format)
@@ -343,6 +348,12 @@ def is_transient_provider_error(error: Exception) -> bool:
             "timeout",
             "timed out",
             "connection reset",
+            "connection aborted",
+            "remote end closed",
+            "broken pipe",
+            "incompleteread",
+            "incomplete read",
+            "unexpected eof",
             "http 429",
             "http 502",
             "http 503",

@@ -31,7 +31,6 @@ class LlmParsingTests(unittest.TestCase):
                     "publisher": "Example University",
                     "excerpt": "Identity excerpt",
                 }],
-                "warnings": [],
             },
         })
         result = parse_synthesis_result(raw)

@@ -6,11 +6,15 @@ Mathernet 是一个在电脑本地运行的 AI 公式学习工具。你可以用
 
 启动 Mathernet 后，所有操作都在网页中完成，不需要再使用命令行。
 
-## 你需要准备
+## 系统需求
 
-- 一台电脑和一个现代浏览器。
+- Python **3.11 或更高版本**。
+- 现代桌面浏览器：Safari、Chrome、Edge 或 Firefox。
 - **OpenRouter** 或 **DeepSeek** 任意一家的 API Key。
-- 不需要任何编程知识。
+- 只有使用 AI 功能时才需要联网。
+- 不需要 Node.js、Docker、数据库，也不需要编程知识。
+
+Mathernet 支持 **macOS**、**Windows 10/11** 和主流 **Linux** 桌面系统。它面向桌面浏览器，目前没有手机端界面。
 
 ## 启动 Mathernet
 
@@ -20,10 +24,16 @@ Mathernet 是一个在电脑本地运行的 AI 公式学习工具。你可以用
 mathernet start
 ```
 
-如果你下载的是 GitHub 压缩包，请先解压，然后在该文件夹中打开“终端”，输入：
+在 macOS 或 Linux 中，如果你下载的是 GitHub 压缩包，请先解压，然后在该文件夹中打开“终端”，输入：
 
 ```sh
 ./mathernet start
+```
+
+在 Windows 中，请在解压后的项目文件夹中打开“命令提示符”或 PowerShell，输入：
+
+```sh
+py mathernet start
 ```
 
 请保持“终端”窗口不要关闭。Mathernet 会显示类似 `http://127.0.0.1:8765` 的地址，把这个地址复制到浏览器中打开即可。

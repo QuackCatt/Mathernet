@@ -1,8 +1,11 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from mathernet.api import handle_api_request
+from mathernet.agent import LearnResult
+from mathernet.errors import StorageError
 from mathernet.map_sessions import MapSessionStore
 from mathernet.models import AIModule, SourceRecord
 from mathernet.repository import GraphRepository
@@ -75,6 +78,44 @@ class MapSessionTests(unittest.TestCase):
         self.assertEqual(response.payload["removed_from_maps"], 2)
         self.assertIsNone(self.repository.find_formula(self.formula.id))
         self.assertEqual(self.service.get_map_graph(secondary["id"])["nodes"], [])
+
+    def test_learn_rolls_back_formula_when_map_insertion_fails(self):
+        session = self.service.create_map_session("Target map")
+
+        class LearningAgent:
+            def __init__(self, repository):
+                self.repository = repository
+
+            def learn(self, query, map_context=None, selected_candidate=None):
+                node = self.repository.add_formula(
+                    formula_id="formula_rollback",
+                    name="Rollback formula",
+                    latex="r=x",
+                    aliases=["rollback formula"],
+                    topic_tags=["algebra"],
+                    ai_module=AIModule("summary", "explanation"),
+                    sources=[],
+                )
+                self.repository.save()
+                return LearnResult(node=node, created=True)
+
+        self.service.agent = LearningAgent(self.repository)
+        with patch.object(
+            self.service.map_sessions,
+            "add_formula",
+            side_effect=StorageError("map write failed"),
+        ):
+            with self.assertRaises(StorageError):
+                self.service.learn(
+                    "Rollback formula",
+                    map_session_id=session["id"],
+                )
+
+        self.assertIsNone(self.repository.find_formula("Rollback formula"))
+        self.assertEqual(
+            self.service.get_map_graph(session["id"])["nodes"],
+            [],
+        )
 
 
 if __name__ == "__main__":

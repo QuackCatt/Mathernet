@@ -44,10 +44,8 @@ class LearningWorkflowTests(unittest.TestCase):
                 "synthetic concept",
             )
             self.assertEqual(len(created.payload["formula"]["sources"]), 1)
-            self.assertIn(
-                "does not propose dependency edges",
-                created.payload["warnings"][0],
-            )
+            self.assertNotIn("warnings", created.payload)
+            self.assertNotIn("unresolved_dependencies", created.payload)
 
             reused = handle_api_request(
                 service,

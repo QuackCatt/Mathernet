@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from mathernet.agent import FormulaAgent
+from mathernet.agent_skills import FormulaCandidate, FormulaDiscovery
 from mathernet.errors import RefusalError, SynthesisError
 from mathernet.llm import SynthesisDependency, SynthesisResult
 from mathernet.models import AIModule, EdgeRelation, RefusalReason, SourceRecord, VerificationStatus
@@ -36,6 +37,16 @@ class StubSynthesizer:
         if self.result is None:
             raise AssertionError("synthesis must not run")
         return self.result
+
+
+class DiscoveryCountingSynthesizer(StubSynthesizer):
+    def __init__(self, result=None):
+        super().__init__(result)
+        self.discovery_calls = 0
+
+    def discover_formula(self, query, library):
+        self.discovery_calls += 1
+        return FormulaDiscovery(canonical_name="A different formula")
 
 
 class StubSearchProvider:
@@ -104,7 +115,32 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(learned.node.sources, [])
         self.assertEqual(learned.node.ai_module.derivation_steps, [])
         self.assertEqual(learned.edges, [])
-        self.assertTrue(any("without source citations" in warning for warning in learned.warnings))
+
+    def test_selected_candidate_skips_discovery_and_preserves_formula_identity(self):
+        selected = FormulaCandidate(
+            canonical_name="Selected formula",
+            latex="y=x^2",
+            summary="The selected candidate summary.",
+            topic="calculus",
+            reason="Exact candidate selected by the learner.",
+            confidence=0.94,
+        )
+        synthesizer = DiscoveryCountingSynthesizer(
+            result_for("A different formula", "y=x")
+        )
+        agent = FormulaAgent(self.repository, None, synthesizer, ())
+
+        learned = agent.learn("selected formula", selected_candidate=selected)
+
+        self.assertEqual(synthesizer.discovery_calls, 0)
+        self.assertEqual(synthesizer.calls, 1)
+        self.assertEqual(
+            synthesizer.map_context["selected_candidate"],
+            selected.to_dict(),
+        )
+        self.assertEqual(learned.node.name, "Selected formula")
+        self.assertEqual(learned.node.latex, "y=x^2")
+        self.assertEqual(learned.node.topic_tags[0], "calculus")
 
     def test_direct_ai_mode_keeps_real_citations_returned_by_the_model(self):
         result = result_for("Cited formula", "x=2")

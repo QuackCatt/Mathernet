@@ -101,6 +101,31 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(response.payload["ai_connection_status"], "connected")
         self.assertEqual(self.store.load().ai_connection_status, "connected")
 
+    def test_transient_failure_preserves_a_successful_connection(self):
+        self.store.save(
+            GatewayConfig(
+                provider="openrouter",
+                api_key="synthetic-valid-token",
+                model="openai/gpt-4o-mini",
+                ai_connection_status="connected",
+                ai_connection_message="connected",
+                ai_connection_checked_at="2026-10-19T00:00:00+00:00",
+            )
+        )
+
+        with patch(
+            "mathernet.services.ProviderGateway.test_connection",
+            side_effect=SynthesisError(
+                "AI provider request failed: IncompleteRead(12 bytes read)"
+            ),
+        ):
+            failed = handle_api_request(self.service, "POST", "/api/gateway/test-ai")
+
+        self.assertEqual(failed.status, 502)
+        config = self.store.load()
+        self.assertEqual(config.ai_connection_status, "connected")
+        self.assertIn("previous successful connection", config.ai_connection_message)
+
     def test_openapi_exposes_gateway_routes(self):
         response = handle_api_request(self.service, "GET", "/api/openapi.json")
         self.assertIn("/api/gateway", response.payload["paths"])

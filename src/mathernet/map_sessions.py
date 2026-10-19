@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -126,6 +127,12 @@ class MapSessionStore:
         if changed:
             self._save(sessions)
         return removed
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        return deepcopy(self._load())
+
+    def restore(self, sessions: list[dict[str, Any]]) -> None:
+        self._save(deepcopy(sessions))
 
     def _load(self) -> list[dict[str, Any]]:
         if not self.path.exists():

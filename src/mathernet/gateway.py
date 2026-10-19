@@ -243,10 +243,13 @@ class ProviderGateway:
             for s in sources
         ]
         system = build_formula_synthesis_prompt(has_sources=bool(source_payload))
+        context = dict(map_context or {})
+        selected_candidate = context.pop("selected_candidate", None)
         prompt = json.dumps({
             "formula_request": query,
+            "selected_candidate": selected_candidate,
             "sources": source_payload,
-            "active_map": map_context or {
+            "active_map": context or {
                 "session_id": "",
                 "formula_ids": [],
                 "formulas": [],

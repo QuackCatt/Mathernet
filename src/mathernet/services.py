@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from .agent import FormulaAgent, LearnResult
+from .agent_skills import FormulaCandidate
 from .config import Settings
 from .deep_dive_sessions import DeepDiveSessionStore, MAX_SESSION_MESSAGE_LENGTH, MAX_SESSION_REPLY_LENGTH
 from .errors import ConflictError, NotFoundError, SynthesisError, ValidationError
@@ -24,7 +25,7 @@ from .models import (
     utc_now,
 )
 from .normalization import formula_key, normalize_text
-from .providers import fetch_provider_models, provider_catalog
+from .providers import fetch_provider_models, is_transient_provider_error, provider_catalog
 from .repository import GraphRepository
 from .retrieval import provider_from_settings
 from .rules import (
@@ -37,7 +38,12 @@ from .rules import (
 
 class LearningAgent(Protocol):
     def discover_formula_candidates(self, query: str) -> list[Any]: ...
-    def learn(self, query: str, map_context: dict[str, Any] | None = None) -> LearnResult: ...
+    def learn(
+        self,
+        query: str,
+        map_context: dict[str, Any] | None = None,
+        selected_candidate: FormulaCandidate | None = None,
+    ) -> LearnResult: ...
 
 
 class DeepDiveGateway(Protocol):
@@ -190,9 +196,18 @@ class MathernetService:
         try:
             result = ProviderGateway(config).test_connection()
         except SynthesisError as error:
-            config.ai_connection_status = "check_settings"
-            config.ai_connection_message = str(error)
-            config.ai_connection_checked_at = checked_at
+            preserve_connected = (
+                config.ai_connection_status == "connected"
+                and is_transient_provider_error(error)
+            )
+            if preserve_connected:
+                config.ai_connection_message = (
+                    "Temporary network issue; the previous successful connection remains active."
+                )
+            else:
+                config.ai_connection_status = "check_settings"
+                config.ai_connection_message = str(error)
+                config.ai_connection_checked_at = checked_at
             self.gateway_store.save(config)
             self._rebuild_agent(config)
             raise
@@ -493,23 +508,65 @@ class MathernetService:
         query: str,
         *,
         map_session_id: str | None = None,
+        candidate: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         query = validate_bounded_text(query, "query", max_length=MAX_QUERY_LENGTH)
         if self.agent is None:
             raise ValidationError("online learning is not configured for this service")
         map_context = self._learning_map_context(map_session_id)
-        if map_session_id:
-            result = self.agent.learn(query, map_context)
-        else:
-            result = self.agent.learn(query)
-        return {
-            "created": result.created,
-            "formula": self._formula_card(result.node),
-            "suggested_edges": [self._edge_payload(edge) for edge in result.edges],
-            "unresolved_dependencies": result.unresolved_dependencies,
-            "warnings": result.warnings,
-            "revision": self.revision,
-        }
+        selected_candidate = self._formula_candidate(candidate)
+        graph_snapshot = self.repository.snapshot()
+        map_snapshot = self.map_sessions.snapshot()
+        try:
+            if selected_candidate is not None:
+                result = self.agent.learn(
+                    query,
+                    map_context,
+                    selected_candidate=selected_candidate,
+                )
+            elif map_session_id:
+                result = self.agent.learn(query, map_context)
+            else:
+                result = self.agent.learn(query)
+            if map_session_id:
+                self.map_sessions.add_formula(map_session_id, result.node.id)
+            return {
+                "created": result.created,
+                "formula": self._formula_card(result.node),
+                "suggested_edges": [self._edge_payload(edge) for edge in result.edges],
+                "revision": self.revision,
+            }
+        except Exception:
+            self.repository.restore(graph_snapshot)
+            self.map_sessions.restore(map_snapshot)
+            raise
+
+    @staticmethod
+    def _formula_candidate(payload: dict[str, Any] | None) -> FormulaCandidate | None:
+        if payload is None:
+            return None
+        if not isinstance(payload, dict):
+            raise ValidationError("candidate must be an object")
+        canonical_name = str(payload.get("canonical_name", "")).strip()
+        latex = str(payload.get("latex", "")).strip()
+        summary = str(payload.get("summary", "")).strip()
+        if not canonical_name or not latex or not summary:
+            raise ValidationError(
+                "candidate requires canonical_name, latex, and summary"
+            )
+        try:
+            confidence = float(payload.get("confidence", 0.0))
+        except (TypeError, ValueError) as error:
+            raise ValidationError("candidate confidence must be a number") from error
+        return FormulaCandidate(
+            canonical_name=canonical_name,
+            latex=latex,
+            summary=summary,
+            topic=str(payload.get("topic", "")).strip(),
+            reason=str(payload.get("reason", "")).strip(),
+            confidence=confidence,
+            local_formula_id=str(payload.get("local_formula_id", "")).strip(),
+        )
 
     def discover_formula_candidates(self, query: str) -> dict[str, Any]:
         query = validate_bounded_text(query, "query", max_length=MAX_QUERY_LENGTH)

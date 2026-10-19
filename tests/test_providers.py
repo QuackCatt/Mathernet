@@ -52,14 +52,15 @@ class FakeResponse:
 
 
 class FlakyTransport(RecordingTransport):
-    def __init__(self):
+    def __init__(self, failure_message="Upstream error from Nvidia: Service temporarily overloaded"):
         super().__init__()
         self.attempts = 0
+        self.failure_message = failure_message
 
     def post(self, endpoint, headers, payload, timeout):
         self.attempts += 1
         if self.attempts == 1:
-            raise SynthesisError("Upstream error from Nvidia: Service temporarily overloaded")
+            raise SynthesisError(self.failure_message)
         return super().post(endpoint, headers, payload, timeout)
 
 
@@ -122,8 +123,8 @@ class ProviderAdapterTests(unittest.TestCase):
         self.assertEqual(call["headers"]["X-Title"], "Mathernet")
         self.assertEqual(call["payload"]["model"], "openai/gpt-4o-mini")
         self.assertNotIn("response_format", call["payload"])
-        self.assertEqual(call["payload"]["reasoning"], {"effort": "medium"})
-        self.assertEqual(call["payload"]["max_tokens"], 4096)
+        self.assertNotIn("reasoning", call["payload"])
+        self.assertNotIn("max_tokens", call["payload"])
 
     def test_openrouter_model_is_required(self):
         with self.assertRaisesRegex(Exception, "model is required"):
@@ -141,6 +142,28 @@ class ProviderAdapterTests(unittest.TestCase):
             transport=transport,
             retry_delay_seconds=0,
         )
+        response = adapter.complete(
+            ProviderRequest(
+                model=config.model,
+                api_key=config.api_key,
+                system_prompt="system",
+                user_prompt="user",
+            )
+        )
+
+        self.assertEqual(response.text, "connected")
+        self.assertEqual(transport.attempts, 2)
+
+    def test_retries_incomplete_provider_reads(self):
+        transport = FlakyTransport(
+            "AI provider request failed: IncompleteRead(12 bytes read)"
+        )
+        config = resolve_provider_config(
+            provider="openrouter",
+            api_key="synthetic-token",
+            model="openai/gpt-4o-mini",
+        )
+        adapter = adapter_for_config(config, transport=transport, retry_delay_seconds=0)
         response = adapter.complete(
             ProviderRequest(
                 model=config.model,

@@ -77,6 +77,12 @@ const elements = {
   candidateQuery: document.querySelector("#candidate-query"),
   candidateGrid: document.querySelector("#candidate-grid"),
   candidateRetry: document.querySelector("#candidate-retry"),
+  candidateCreation: document.querySelector("#candidate-creation"),
+  creationKicker: document.querySelector("#creation-kicker"),
+  creationTitle: document.querySelector("#creation-title"),
+  creationName: document.querySelector("#creation-name"),
+  creationFormula: document.querySelector("#creation-formula"),
+  creationStatus: document.querySelector("#creation-status"),
   rejectDialog: document.querySelector("#reject-dialog"),
   confirmReject: document.querySelector("#confirm-reject"),
   relationshipDialog: document.querySelector("#relationship-dialog"),
@@ -1378,11 +1384,28 @@ async function refreshGatewayConnection() {
     setConnectionIndicator("connected", "Connected");
     return true;
   } catch (error) {
-    state.gateway = {
-      ...(state.gateway || {}),
-      ai_connection_status: "check_settings",
-      ai_connection_message: error.message,
-    };
+    let savedConfig = null;
+    try {
+      savedConfig = await api("/api/gateway");
+      state.gateway = savedConfig;
+    } catch {
+      state.gateway = {
+        ...(state.gateway || {}),
+        ai_connection_status: "check_settings",
+        ai_connection_message: error.message,
+      };
+    }
+    const preservedConnection = savedConfig?.ai_connection_status === "connected";
+    if (preservedConnection) {
+      if (message) {
+        message.textContent =
+          "Temporary network issue. Your last successful connection remains active.";
+        message.classList.add("is-notice");
+      }
+      setSettingsState(elements.settingsAiState, "success", "Connected");
+      setConnectionIndicator("connected", "Connected");
+      return true;
+    }
     if (message) {
       message.textContent = error.message;
       message.classList.add("is-error");
@@ -1425,45 +1448,96 @@ function renderFormulaCandidates(query, candidates) {
 
 async function applyLearnedFormula(result) {
   const formulaId = result.formula.formula.id;
-  if (state.activeMapSessionId) {
-    await api(`/api/map-sessions/${encodeURIComponent(state.activeMapSessionId)}/formulas`, {
-      method: "POST",
-      body: JSON.stringify({ formula_id: formulaId }),
-    });
-  }
   await loadMapSessions({ preferredId: state.activeMapSessionId });
   await selectFormula(formulaId);
   showToast(result.created ? "Formula card created." : "Existing formula opened.");
-  for (const warning of result.warnings || []) {
-    showToast(warning, "notice");
-  }
-  const unresolvedCount = result.unresolved_dependencies?.length || 0;
-  if (unresolvedCount) {
-    showToast(
-      `${unresolvedCount} suggested prerequisite${unresolvedCount === 1 ? " was" : "s were"} not in the local library.`,
-      "notice",
-    );
-  }
+}
+
+function setCandidateCreationActive(active) {
+  const dialog = elements.candidateDialog;
+  if (!dialog) return;
+  dialog.classList.toggle("is-creating", active);
+  dialog.setAttribute("aria-busy", String(active));
+  dialog.querySelectorAll(":scope > :not(.candidate-creation)").forEach((element) => {
+    element.inert = active;
+  });
+}
+
+function resetCandidateCreation() {
+  setCandidateCreationActive(false);
+  if (!elements.candidateCreation) return;
+  elements.candidateCreation.hidden = true;
+  elements.candidateCreation.classList.remove("is-complete");
+  elements.creationKicker.textContent = "Formula workspace";
+  elements.creationTitle.textContent = "Building your formula card";
+  elements.creationStatus.textContent =
+    "Preparing the definition and knowledge structure.";
+}
+
+function showCandidateCreation(candidate) {
+  elements.creationName.textContent = candidate.canonical_name;
+  elements.creationFormula.innerHTML = latexMarkup(
+    candidate.latex,
+    candidate.latex,
+    true,
+  );
+  elements.creationFormula.setAttribute("aria-label", candidate.latex);
+  elements.candidateCreation.hidden = false;
+  setCandidateCreationActive(true);
+  requestAnimationFrame(() => elements.candidateCreation.classList.add("is-active"));
+}
+
+async function completeCandidateCreation(result) {
+  elements.candidateCreation.classList.add("is-complete");
+  elements.creationKicker.textContent = result.created
+    ? "Formula card created"
+    : "Library match found";
+  elements.creationTitle.textContent = result.created
+    ? "Your formula is ready"
+    : "Opening your saved formula";
+  elements.creationStatus.textContent =
+    "Placing the formula in your current mind map.";
+  await new Promise((resolve) => window.setTimeout(resolve, 320));
+}
+
+function isConnectionFailure(error) {
+  return (
+    error instanceof ApiError &&
+    ["network_error", "upstream_error", "invalid_response"].includes(error.code)
+  );
+}
+
+function showFormulaCreationError(error) {
+  resetCandidateCreation();
+  const prefix = isConnectionFailure(error) ? "Connection failed." : "Formula creation failed.";
+  showToast(
+    `${prefix} No changes were saved to your library or current mind map.`,
+    "error",
+  );
 }
 
 async function chooseFormulaCandidate(candidate, button) {
   if (!candidate || state.formulaCandidateBusy) return;
   state.formulaCandidateBusy = true;
   setBusy(button, true, candidate.existing ? "Opening…" : "Creating…");
+  showCandidateCreation(candidate);
   try {
     const result = await api("/api/learn", {
       method: "POST",
       body: JSON.stringify({
         query: candidate.local_formula_id || candidate.canonical_name,
         map_session_id: state.activeMapSessionId || "",
+        candidate,
       }),
     });
+    await completeCandidateCreation(result);
     closeDialog(elements.candidateDialog);
     await applyLearnedFormula(result);
     elements.globalQuery.value = "";
   } catch (error) {
-    showToast(error.message, "error");
+    showFormulaCreationError(error);
   } finally {
+    resetCandidateCreation();
     state.formulaCandidateBusy = false;
     setBusy(button, false);
   }
@@ -1798,7 +1872,11 @@ function bindEvents() {
     elements.globalQuery.focus();
     elements.globalQuery.select();
   });
-
+  elements.candidateDialog.addEventListener("cancel", (event) => {
+    if (elements.candidateDialog.classList.contains("is-creating")) {
+      event.preventDefault();
+    }
+  });
   let libraryTimer;
   elements.libraryQuery.addEventListener("input", () => {
     window.clearTimeout(libraryTimer);

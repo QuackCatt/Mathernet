@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 
@@ -37,6 +38,13 @@ class GraphRepository:
     def save(self) -> None:
         self._validate_references()
         self.store.save(self.document)
+
+    def snapshot(self) -> GraphDocument:
+        return deepcopy(self.document)
+
+    def restore(self, document: GraphDocument) -> None:
+        self.document = deepcopy(document)
+        self.save()
 
     def reload(self) -> None:
         self.document = self.store.load()

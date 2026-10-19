@@ -76,10 +76,11 @@ def handle_api_request(
                 ),
             )
         if path == "/api/learn" and method == "POST":
-            payload = _require_body(body, {"query"}, {"map_session_id"})
+            payload = _require_body(body, {"query"}, {"map_session_id", "candidate"})
             result = service.learn(
                 _required_string(payload, "query"),
                 map_session_id=_optional_string(payload, "map_session_id"),
+                candidate=payload.get("candidate"),
             )
             return ApiResponse(201 if result["created"] else 200, result)
 

@@ -1950,7 +1950,19 @@ h3 {
 }
 
 .candidate-dialog {
+  position: relative;
   overflow: hidden;
+}
+
+.candidate-dialog > :not(.candidate-creation) {
+  transition:
+    opacity var(--motion-base) var(--ease),
+    transform var(--motion-base) var(--ease);
+}
+
+.candidate-dialog.is-creating > :not(.candidate-creation) {
+  opacity: 0.12;
+  transform: scale(0.988);
 }
 
 .candidate-dialog .dialog-header,
@@ -1959,6 +1971,168 @@ h3 {
 .candidate-grid,
 .candidate-footer {
   margin-inline: 24px;
+}
+
+.candidate-creation {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  padding: 42px;
+  overflow: auto;
+  background: color-mix(in srgb, var(--surface) 92%, var(--canvas));
+  opacity: 0;
+  transform: scale(1.012);
+  transition:
+    opacity var(--motion-base) var(--ease),
+    transform var(--motion-base) var(--ease);
+}
+
+.candidate-creation[hidden] {
+  display: none;
+}
+
+.candidate-creation.is-active {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.candidate-creation-stage {
+  display: grid;
+  justify-items: center;
+  width: min(560px, 100%);
+  margin: auto;
+  text-align: center;
+}
+
+.creation-emblem {
+  position: relative;
+  width: 102px;
+  height: 102px;
+  margin-bottom: 18px;
+  border: 1px solid color-mix(in srgb, var(--signal) 25%, var(--line));
+  border-radius: 50%;
+  background: var(--canvas);
+  box-shadow:
+    0 0 0 9px color-mix(in srgb, var(--signal) 5%, transparent),
+    0 16px 36px color-mix(in srgb, var(--signal) 12%, transparent);
+}
+
+.creation-emblem-orbit,
+.creation-emblem-core,
+.creation-emblem-node {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+}
+
+.creation-emblem-orbit {
+  inset: 16px;
+  border: 1px solid color-mix(in srgb, var(--verified) 32%, var(--line));
+  animation: creation-orbit 7s linear infinite;
+}
+
+.creation-emblem-core {
+  inset: 36px;
+  background: var(--signal);
+  box-shadow: 0 0 0 7px color-mix(in srgb, var(--signal) 12%, transparent);
+}
+
+.creation-emblem-node {
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--surface);
+  background: var(--verified);
+  box-shadow: 0 2px 7px color-mix(in srgb, var(--verified) 24%, transparent);
+}
+
+.creation-emblem-node-one {
+  top: 11px;
+  left: 46px;
+}
+
+.creation-emblem-node-two {
+  right: 15px;
+  bottom: 22px;
+}
+
+.creation-emblem-node-three {
+  bottom: 22px;
+  left: 15px;
+}
+
+.candidate-creation-stage .section-kicker {
+  margin-bottom: 5px;
+  color: var(--signal);
+}
+
+.candidate-creation-stage h2 {
+  margin-bottom: 7px;
+  font-size: 30px;
+  line-height: 1.14;
+}
+
+.creation-name {
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.creation-formula {
+  display: grid;
+  place-items: center;
+  width: min(480px, 100%);
+  min-height: 92px;
+  margin-bottom: 20px;
+  padding: 16px 20px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 7%, transparent);
+  font-size: 22px;
+}
+
+.creation-track {
+  position: relative;
+  width: min(320px, 78%);
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-deep);
+}
+
+.creation-track span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 42%;
+  border-radius: inherit;
+  background: var(--signal);
+  animation: creation-progress 1.35s var(--ease) infinite;
+}
+
+.creation-status {
+  min-height: 22px;
+  margin: 14px 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.candidate-creation.is-complete .creation-emblem {
+  border-color: color-mix(in srgb, var(--verified) 48%, var(--line));
+}
+
+.candidate-creation.is-complete .creation-emblem-core {
+  background: var(--verified);
+  box-shadow: 0 0 0 7px var(--verified-soft);
+}
+
+.candidate-creation.is-complete .creation-track span {
+  width: 100%;
+  background: var(--verified);
+  animation: none;
 }
 
 .candidate-query {
@@ -2640,6 +2814,10 @@ h3 {
   color: var(--verified);
 }
 
+.settings-status.is-notice {
+  color: var(--pending);
+}
+
 .settings-status.is-error,
 .settings-error {
   color: var(--danger);
@@ -3200,6 +3378,22 @@ h3 {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes creation-progress {
+  from {
+    transform: translateX(-110%);
+  }
+
+  to {
+    transform: translateX(350%);
+  }
+}
+
+@keyframes creation-orbit {
+  to {
+    transform: rotate(360deg);
   }
 }
 

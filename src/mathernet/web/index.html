@@ -467,6 +467,29 @@
           Try another description
         </button>
       </div>
+      <div class="candidate-creation" id="candidate-creation" hidden aria-live="polite">
+        <div class="candidate-creation-stage">
+          <div class="creation-emblem" aria-hidden="true">
+            <span class="creation-emblem-orbit"></span>
+            <span class="creation-emblem-core"></span>
+            <span class="creation-emblem-node creation-emblem-node-one"></span>
+            <span class="creation-emblem-node creation-emblem-node-two"></span>
+            <span class="creation-emblem-node creation-emblem-node-three"></span>
+          </div>
+          <p class="section-kicker" id="creation-kicker">Formula workspace</p>
+          <h2 id="creation-title">Building your formula card</h2>
+          <p class="creation-name" id="creation-name"></p>
+          <div
+            class="creation-formula formula-latex"
+            id="creation-formula"
+            role="math"
+          ></div>
+          <div class="creation-track" aria-hidden="true"><span></span></div>
+          <p class="creation-status" id="creation-status">
+            Preparing the definition and knowledge structure.
+          </p>
+        </div>
+      </div>
     </dialog>
 
     <dialog class="dialog settings-dialog" id="settings-dialog" aria-labelledby="settings-title">

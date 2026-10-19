@@ -6,11 +6,15 @@ Mathernet is a local, AI-assisted formula learning workspace. Describe a formula
 
 Everything is managed in a web interface. After starting Mathernet once, you do not need to use command-line tools.
 
-## What You Need
+## System Requirements
 
-- A computer and a modern web browser.
+- Python **3.11 or newer**.
+- A modern desktop browser: Safari, Chrome, Edge, or Firefox.
 - One AI API key from either **OpenRouter** or **DeepSeek**.
-- No programming knowledge is required.
+- Internet access is required only when using AI features.
+- Node.js, Docker, a database, and programming knowledge are not required.
+
+Mathernet runs on **macOS**, **Windows 10/11**, and mainstream **Linux** desktops. It is designed for desktop browsers and does not include a mobile interface.
 
 ## Start Mathernet
 
@@ -20,10 +24,16 @@ If Mathernet is installed, open Terminal and enter:
 mathernet start
 ```
 
-If you downloaded and unzipped the project, open Terminal in that folder and enter:
+On macOS or Linux, if you downloaded and unzipped the project, open Terminal in that folder and enter:
 
 ```sh
 ./mathernet start
+```
+
+On Windows, open Command Prompt or PowerShell in the unzipped project folder and enter:
+
+```sh
+py mathernet start
 ```
 
 Keep the Terminal window open. Mathernet prints an address such as `http://127.0.0.1:8765`. Open that address in your browser. If the default port is already being used, Mathernet automatically chooses the next available port and prints the new address.

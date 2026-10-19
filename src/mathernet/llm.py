@@ -31,7 +31,6 @@ class SynthesisResult:
     ai_module: AIModule
     sources: list[SearchResult] = field(default_factory=list)
     dependencies: list[SynthesisDependency] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list)
 
 
 class Synthesizer(Protocol):
@@ -71,7 +70,6 @@ class RuleBasedSynthesizer:
             ),
             sources=list(sources),
             dependencies=[],
-            warnings=["Offline synthesis does not propose dependency edges."],
         )
 
 
@@ -128,7 +126,7 @@ class OpenAIResponsesSynthesizer:
         schema = {
             "type": "object",
             "additionalProperties": False,
-            "required": ["name", "latex", "aliases", "topic_tags", "ai_module", "dependencies", "warnings"],
+            "required": ["name", "latex", "aliases", "topic_tags", "ai_module", "dependencies"],
             "properties": {
                 "name": {"type": "string"},
                 "latex": {"type": "string"},
@@ -168,7 +166,6 @@ class OpenAIResponsesSynthesizer:
                         },
                     },
                 },
-                "warnings": {"type": "array", "items": {"type": "string"}},
             },
         }
         request_body = {
@@ -264,7 +261,6 @@ def parse_synthesis_result(raw: str) -> SynthesisResult:
             ),
             sources=sources,
             dependencies=dependencies,
-            warnings=_string_values(data.get("warnings", [])),
         )
     except (KeyError, TypeError, ValueError) as error:
         fields = ", ".join(sorted(data.keys())) if isinstance(data, dict) else type(data).__name__

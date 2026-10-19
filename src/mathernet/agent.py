@@ -29,8 +29,6 @@ class LearnResult:
     node: FormulaNode
     created: bool
     edges: list[DependencyEdge] = field(default_factory=list)
-    unresolved_dependencies: list[str] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list)
 
 
 class FormulaAgent:
@@ -89,13 +87,39 @@ class FormulaAgent:
             raise SynthesisError("AI formula candidate search returned no usable candidates")
         return resolved
 
-    def learn(self, query: str, map_context: dict | None = None) -> LearnResult:
+    def learn(
+        self,
+        query: str,
+        map_context: dict | None = None,
+        selected_candidate: FormulaCandidate | None = None,
+    ) -> LearnResult:
         enforce_request_safety(query)
-        existing = self.repository.find_formula(query)
+        existing = None
+        if selected_candidate and selected_candidate.local_formula_id:
+            try:
+                existing = self.repository.get_formula(selected_candidate.local_formula_id)
+            except NotFoundError:
+                existing = None
+        if existing is None:
+            lookup_name = (
+                selected_candidate.canonical_name if selected_candidate else query
+            )
+            existing = self.repository.find_formula(lookup_name)
         if existing is not None:
             return LearnResult(node=existing, created=False)
 
-        canonical_query, discovered, discovery = self._discover_formula(query)
+        if selected_candidate is not None:
+            canonical_query = selected_candidate.canonical_name
+            discovered = None
+            discovery = FormulaDiscovery(
+                canonical_name=selected_candidate.canonical_name,
+                local_formula_id=selected_candidate.local_formula_id,
+                aliases=[selected_candidate.canonical_name],
+                confidence=selected_candidate.confidence,
+                reason=selected_candidate.reason,
+            )
+        else:
+            canonical_query, discovered, discovery = self._discover_formula(query)
         if discovered is not None:
             return LearnResult(node=discovered, created=False)
 
@@ -115,10 +139,30 @@ class FormulaAgent:
                 RefusalReason.NO_RELIABLE_SOURCE.value,
             )
 
-        if map_context is None:
-            synthesis = self.synthesizer.synthesize(canonical_query, results)
+        synthesis_context = dict(map_context) if map_context else {}
+        if selected_candidate is not None:
+            synthesis_context["selected_candidate"] = selected_candidate.to_dict()
+        if synthesis_context:
+            synthesis = self.synthesizer.synthesize(
+                canonical_query,
+                results,
+                synthesis_context,
+            )
         else:
-            synthesis = self.synthesizer.synthesize(canonical_query, results, map_context)
+            synthesis = self.synthesizer.synthesize(canonical_query, results)
+        if selected_candidate is not None:
+            synthesis.name = selected_candidate.canonical_name
+            synthesis.latex = selected_candidate.latex
+            synthesis.topic_tags = list(
+                dict.fromkeys(
+                    [
+                        selected_candidate.topic,
+                        *(synthesis.topic_tags if synthesis.topic_tags else []),
+                    ]
+                )
+            )
+            if not synthesis.ai_module.summary:
+                synthesis.ai_module.summary = selected_candidate.summary
         duplicate = self._find_synthesized_duplicate(synthesis, canonical_query)
         if duplicate is not None:
             return LearnResult(node=duplicate, created=False)
@@ -131,9 +175,6 @@ class FormulaAgent:
         citation_results = synthesis.sources if direct_mode else results
         if direct_mode and not citation_results:
             synthesis.ai_module.derivation_steps = []
-            synthesis.warnings.append(
-                "AI answer saved without source citations; verify important claims before relying on them."
-            )
         source_records = self._validate_and_store_sources(synthesis, citation_results)
         formula_id = stable_id("formula", formula_key(synthesis.name or canonical_query))
         node = self.repository.add_formula(
@@ -150,24 +191,17 @@ class FormulaAgent:
             ai_module=synthesis.ai_module,
             sources=[source.id for source in source_records],
         )
-        edges, unresolved = self._resolve_dependencies(
+        edges, _ = self._resolve_dependencies(
             node,
             synthesis.dependencies,
             source_records,
             set((map_context or {}).get("formula_ids", [])),
         )
-        warnings = list(synthesis.warnings)
-        if unresolved:
-            warnings.append(
-                "Some suggested prerequisites are not in the local library; create those cards first, then add the edges explicitly."
-            )
         self.repository.save()
         return LearnResult(
             node=node,
             created=True,
             edges=edges,
-            unresolved_dependencies=unresolved,
-            warnings=warnings,
         )
 
     @staticmethod
