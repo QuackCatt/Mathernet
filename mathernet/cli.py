@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import shutil
 import sys
@@ -10,7 +11,7 @@ from .api import create_server
 from .config import Settings
 from .errors import MathernetError
 from .evaluation import evaluate_graph, load_gold_cases, persistence_check
-from .models import EdgeRelation, FormulaStatus, GraphDocument, VerificationStatus
+from .models import EdgeRelation, FormulaStatus, VerificationStatus
 from .normalization import latex_to_ascii
 from .repository import GraphRepository
 from .services import build_service
@@ -79,12 +80,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="path for the machine-readable evaluation report",
     )
 
-    demo = subparsers.add_parser("demo", help="load a small offline demonstration graph")
-    demo.add_argument("--force", action="store_true", help="replace the current local graph")
-
-    serve = subparsers.add_parser("serve", help="start the local JSON API for a web interface")
-    serve.add_argument("--host", default="127.0.0.1")
-    serve.add_argument("--port", type=int, default=8765)
+    start = subparsers.add_parser("start", help="start the Mathernet web application")
+    start.add_argument("--host", default="127.0.0.1")
+    start.add_argument("--port", type=int, default=8765)
     return parser
 
 
@@ -101,15 +99,18 @@ def main(argv: list[str] | None = None) -> int:
 def dispatch(args: argparse.Namespace) -> int:
     if args.command == "init":
         return initialize()
-    if args.command == "demo":
-        return load_demo(force=args.force)
+    if args.command == "start":
+        initialize(quiet=True)
+        return start_api(
+            Settings.from_env(),
+            host=args.host,
+            port=args.port,
+        )
 
     settings = Settings.from_env()
     repository = GraphRepository(settings.data_path)
     if args.command == "doctor":
         return doctor(settings)
-    if args.command == "serve":
-        return serve_api(settings, args.host, args.port)
     if args.command == "list":
         return list_formulas(repository)
     if args.command == "lookup":
@@ -173,15 +174,16 @@ def dispatch(args: argparse.Namespace) -> int:
     raise MathernetError("unknown command")
 
 
-def initialize() -> int:
+def initialize(*, quiet: bool = False) -> int:
     Path("data").mkdir(exist_ok=True)
     if not Path(".env").exists() and Path(".env.example").exists():
         shutil.copyfile(".env.example", ".env")
     settings = Settings.from_env()
     settings.data_path.parent.mkdir(parents=True, exist_ok=True)
     GraphRepository(settings.data_path).save()
+    if quiet:
+        return 0
     print("Mathernet is initialized.")
-    print("Next: edit .env, then run `scripts/mathernet demo`.")
     return 0
 
 
@@ -214,18 +216,36 @@ def doctor(settings: Settings) -> int:
     return 0 if all(item[1] for item in checks) else 1
 
 
-def serve_api(settings: Settings, host: str, port: int) -> int:
+def start_api(settings: Settings, *, host: str, port: int) -> int:
     if not 0 <= port <= 65535:
         raise MathernetError("port must be between 0 and 65535")
     service = build_service(settings)
-    server = create_server(service, host, port)
+    server = None
+    last_error = None
+    candidates = [port] if port == 0 else range(port, min(port + 20, 65536))
+    for candidate in candidates:
+        try:
+            server = create_server(service, host, candidate)
+            break
+        except OSError as error:
+            last_error = error
+            if error.errno != errno.EADDRINUSE:
+                raise MathernetError(f"could not start Mathernet: {error}") from error
+    if server is None:
+        raise MathernetError(
+            f"could not find an available port near {port}: {last_error or 'unknown error'}"
+        )
+
     address, actual_port = server.server_address[:2]
-    print(f"Mathernet API listening at http://{address}:{actual_port}")
-    print("OpenAPI: /api/openapi.json")
+    display_host = "127.0.0.1" if address in {"0.0.0.0", "::"} else address
+    print("Mathernet is running.")
+    print(f"URL: http://{display_host}:{actual_port}")
+    print(f"Port: {actual_port}")
+    print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nMathernet API stopped.")
+        print("\nMathernet stopped.")
     finally:
         server.server_close()
     return 0
@@ -256,7 +276,7 @@ def run_evaluation(repository: GraphRepository, gold_path: str, output_path: str
 def list_formulas(repository: GraphRepository) -> int:
     nodes = repository.list_formulas()
     if not nodes:
-        print("The local formula library is empty. Run `mathernet demo` for an offline example.")
+        print("The local formula library is empty.")
         return 0
     for node in nodes:
         print(f"{node.id}  {node.name}  [{node.status.value}]")
@@ -332,20 +352,6 @@ def manage_edge(repository: GraphRepository, args: argparse.Namespace) -> int:
         )
     repository.save()
     print(f"{edge.id}: {edge.source_id} -> {edge.target_id} [{edge.verification_status.value}]")
-    return 0
-
-
-def load_demo(force: bool) -> int:
-    settings = Settings.from_env()
-    settings.data_path.parent.mkdir(parents=True, exist_ok=True)
-    repository = GraphRepository(settings.data_path)
-    if repository.document.nodes and not force:
-        raise MathernetError("the local graph is not empty; use --force to replace it")
-    demo_path = Path(__file__).resolve().parent.parent / "examples" / "demo_graph.json"
-    repository.document = GraphDocument.from_dict(json.loads(demo_path.read_text(encoding="utf-8")))
-    repository.save()
-    print("Offline demonstration graph loaded.")
-    print("Try: mathernet show \"Euler's identity\"")
     return 0
 
 

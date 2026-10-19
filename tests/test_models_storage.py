@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class ModelsAndStorageTests(unittest.TestCase):
     def test_demo_graph_round_trip(self):
-        payload = json.loads((ROOT / "examples" / "demo_graph.json").read_text(encoding="utf-8"))
+        payload = json.loads((ROOT / "tests" / "fixtures" / "demo_graph.json").read_text(encoding="utf-8"))
         document = GraphDocument.from_dict(payload)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "graph.json"

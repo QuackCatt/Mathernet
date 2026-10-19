@@ -6,17 +6,13 @@ Mathernet is for study organization and reflection. It does not solve or grade e
 
 ## Quick Start
 
-No source-code editing is required:
+From the unpacked project folder, run one command:
 
 ```sh
-sh scripts/setup.sh
-# Configure an AI provider in the Web settings; MCP is optional.
-scripts/mathernet demo
-scripts/mathernet show "Euler's identity"
-scripts/mathernet graph "Euler's identity"
+scripts/mathernet start
 ```
 
-The setup script creates a local virtual environment and a private `.env` file. Personal notes and generated graph data live under `data/`, which is excluded from version control.
+The command creates an empty local library and a private `.env` file when needed, starts the web application, and prints its actual URL and port. Configure an AI provider in the Web settings after opening it. Personal notes and generated graph data live under `data/`, which is excluded from version control.
 
 If an optional MCP tool is unavailable, previously saved formula cards remain searchable. With MCP disabled, Mathernet asks the selected AI provider directly and saves only citations that the provider actually returns.
 
@@ -35,19 +31,20 @@ scripts/mathernet edge confirm edge_complex_to_euler
 scripts/mathernet edge reject edge_complex_to_euler
 scripts/mathernet export data/export.json
 scripts/mathernet evaluate
-scripts/mathernet serve
+scripts/mathernet start
 ```
 
 Verification status is always written as text, not communicated by color alone. `user_verified` records the learner's confirmation; it does not claim that the mathematics has been formally proved.
 
 ## Web Workspace
 
-Start the local service and open [http://127.0.0.1:8765](http://127.0.0.1:8765):
+Start the local service:
 
 ```sh
-scripts/mathernet demo
-scripts/mathernet serve
+scripts/mathernet start
 ```
+
+Open the URL printed in the terminal. The default URL is [http://127.0.0.1:8765](http://127.0.0.1:8765); if that port is occupied, Mathernet selects the next available port automatically.
 
 The workspace provides multiple named mind-map sessions, a formula library grouped by mathematical topic, a keyboard-accessible dependency graph, source traceability, personal notes, study status controls, and explicit confirmation for AI-suggested dependencies. The desktop layout supports independent left/right panel collapsing; selecting a formula reopens the detail panel automatically. Map selection, formula selection, and detail tab are kept in the URL for reloadable study sessions.
 
@@ -57,7 +54,7 @@ The learn action follows the same learning chain as the terminal: approved-sourc
 
 ## Local JSON API for Web Development
 
-`scripts/mathernet serve` starts a local JSON API at `http://127.0.0.1:8765`. The API is also browsable at `/api/openapi.json`. It uses the same stored graph and business rules as the terminal interface, so the Web layer does not need a second persistence or safety model.
+`scripts/mathernet start` starts the local application and JSON API. The API is also browsable at `/api/openapi.json`. It uses the same stored graph and business rules as the terminal interface, so the Web layer does not need a second persistence or safety model.
 
 | Operation | Method and route |
 |---|---|

@@ -29,7 +29,7 @@ class FormulaIntroductionTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         payload = json.loads(
-            (ROOT / "examples" / "demo_graph.json").read_text(encoding="utf-8")
+            (ROOT / "tests" / "fixtures" / "demo_graph.json").read_text(encoding="utf-8")
         )
         self.repository = GraphRepository(Path(self.temporary.name) / "graph.json")
         self.repository.document = GraphDocument.from_dict(payload)

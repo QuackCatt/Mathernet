@@ -13,7 +13,7 @@ from mathernet.storage import JsonGraphStore
 
 ROOT = Path(__file__).resolve().parents[1]
 GOLD = json.loads((ROOT / "tests" / "gold_cases.json").read_text(encoding="utf-8"))
-DEMO = json.loads((ROOT / "examples" / "demo_graph.json").read_text(encoding="utf-8"))
+DEMO = json.loads((ROOT / "tests" / "fixtures" / "demo_graph.json").read_text(encoding="utf-8"))
 
 
 class GoldSynthesizer:

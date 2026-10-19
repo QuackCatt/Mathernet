@@ -299,7 +299,7 @@ async function api(path, options = {}) {
     response = await fetch(path, { ...options, headers });
   } catch {
     throw new ApiError(
-      "Mathernet cannot reach the local service. Start it again with scripts/mathernet serve.",
+      "Mathernet cannot reach the local service. Start it again with scripts/mathernet start.",
       "network_error",
     );
   }
