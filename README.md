@@ -4,7 +4,7 @@
 
 Mathernet is a local, AI-assisted formula learning workspace. Describe a formula in your own words, review the candidates, and add the right one to a visual knowledge map. You can also write study notes, review formulas, and explore the ideas behind them with AI.
 
-Everything is managed in a web interface. After starting Mathernet once, you do not need to use command-line tools.
+Everything is managed in a web interface. You only use Terminal or Command Prompt to start the downloaded application; there is no separate installation step.
 
 ## System Requirements
 
@@ -18,27 +18,33 @@ Mathernet runs on **macOS**, **Windows 10/11**, and mainstream **Linux** desktop
 
 ## Start Mathernet
 
-If Mathernet is installed, open Terminal and enter:
+Use the following complete flow every time. Mathernet is started directly from the downloaded folder and is not installed globally.
 
-```sh
-mathernet start
-```
+1. On GitHub, click **Code**, then click **Download ZIP**.
+2. Unzip the downloaded file. Keep the unzipped project folder together; do not move only the `mathernet` file out of it.
+3. Open the unzipped project folder in Terminal or Command Prompt:
+   - **macOS or Linux:** Open Terminal, type `cd ` with one space after it, drag the unzipped folder into the Terminal window, then press Enter.
+   - **Windows:** Open the unzipped folder in File Explorer, type `cmd` in the File Explorer address bar, then press Enter.
+4. Start Mathernet from inside that folder:
+   - **macOS or Linux:**
 
-On macOS or Linux, if you downloaded and unzipped the project, open Terminal in that folder and enter:
+     ```sh
+     ./mathernet start
+     ```
 
-```sh
-./mathernet start
-```
+   - **Windows:**
 
-On Windows, open Command Prompt or PowerShell in the unzipped project folder and enter:
+     ```bat
+     py .\mathernet start
+     ```
 
-```sh
-py mathernet start
-```
+5. Keep the Terminal or Command Prompt window open. Use the exact URL printed by Mathernet, such as `http://127.0.0.1:8765`, in your browser. Always use the URL shown on your screen instead of guessing the port.
 
-Keep the Terminal window open. Mathernet prints an address such as `http://127.0.0.1:8765`. Open that address in your browser. If the default port is already being used, Mathernet automatically chooses the next available port and prints the new address.
+Keep the folder prefix shown in the command. The `./` on macOS/Linux or `.\` on Windows ensures that the program inside the current downloaded folder is used.
 
-To stop Mathernet, close the Terminal window or press `Control + C` in Terminal.
+To start Mathernet again later, open the same unzipped project folder and repeat steps 3–5. There is no separate installation or update command.
+
+If the default port is already in use, Mathernet automatically selects the next available port and prints the new URL. To stop Mathernet, close the Terminal or Command Prompt window, or press `Control + C`.
 
 ## First-Time Setup
 
