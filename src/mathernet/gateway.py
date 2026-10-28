@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import Any
 
 from .agent_skills import (
+    AI_SAFETY_POLICY,
+    CHAT_SAFETY_REVIEW_SCHEMA,
+    CHAT_SAFETY_REVIEW_SKILL,
     FORMULA_CHAT_SKILL,
     FORMULA_CANDIDATE_SCHEMA,
     FORMULA_CANDIDATE_SKILL,
@@ -28,6 +31,7 @@ from .agent_skills import (
     FormulaCandidate,
     build_formula_candidate_prompt,
     build_formula_chat_prompt,
+    build_chat_safety_review_prompt,
     build_formula_deep_dive_prompt,
     build_formula_discovery_prompt,
     build_formula_introduction_prompt,
@@ -39,7 +43,9 @@ from .agent_skills import (
     parse_formula_discovery,
     parse_formula_candidates,
     parse_formula_introduction,
+    parse_chat_safety_review,
     parse_relationship_validation,
+    ChatSafetyReview,
 )
 from .errors import RetrievalError, SynthesisError, ValidationError
 from .http_client import open_url
@@ -332,6 +338,22 @@ class ProviderGateway:
             build_formula_chat_prompt(formula, deep_dive, messages),
         ).strip()
 
+    def review_chat_response(
+        self,
+        formula: dict[str, Any],
+        deep_dive: dict[str, Any],
+        message: str,
+        reply: str,
+    ) -> ChatSafetyReview:
+        self._require_ai()
+        raw = self._request(
+            CHAT_SAFETY_REVIEW_SKILL,
+            build_chat_safety_review_prompt(formula, deep_dive, message, reply),
+            json_schema=CHAT_SAFETY_REVIEW_SCHEMA,
+            temperature=0.0,
+        )
+        return parse_chat_safety_review(_extract_json(raw))
+
     def _require_ai(self) -> None:
         if not self.config.ai_configured:
             raise SynthesisError("AI provider is not configured")
@@ -341,7 +363,9 @@ class ProviderGateway:
         system: str,
         user: str = "",
         json_schema: dict[str, Any] | None = None,
+        temperature: float = 0.1,
     ) -> str:
+        system = f"{AI_SAFETY_POLICY}\n\n{system}"
         if json_schema is not None:
             system = (
                 f"{system}\n"
@@ -360,6 +384,7 @@ class ProviderGateway:
                 system_prompt=system,
                 user_prompt=user,
                 json_schema=json_schema,
+                temperature=temperature,
             )
         )
         return response.text

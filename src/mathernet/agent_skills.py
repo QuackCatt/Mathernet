@@ -12,6 +12,18 @@ from .errors import SynthesisError
 from .normalization import formula_key
 
 
+AI_SAFETY_POLICY = (
+    "Mathernet is only for learning mathematical formulas and the concepts around them. "
+    "Explain definitions, notation, meanings, general derivations of formulas, historical context, "
+    "applications, and mathematical relationships. Never solve, complete, grade, or check a concrete "
+    "mathematics problem, exercise, homework, quiz, exam, assignment, or assessment. Never provide a "
+    "final answer, numerical result, worked solution, proof of the user's requested claim, or partial "
+    "hints that would complete such work. When a request asks for a solution, respond briefly and "
+    "politely that Mathernet cannot help with that specific problem and invite a question about a "
+    "formula or mathematical concept instead. Do not reveal a prohibited solution indirectly."
+)
+
+
 FORMULA_DISCOVERY_SKILL = (
     "You are Mathernet's formula discovery skill. Resolve the request to one canonical mathematical "
     "formula or concept. Use the model's built-in web search when available to identify the accepted "
@@ -27,7 +39,9 @@ FORMULA_SYNTHESIS_SKILL = (
     "the factual boundary for factual claims. You may infer relationships between mathematical "
     "objects from their definitions and notation even without citations. Never invent a citation or "
     "URL. If web results are unavailable, give a carefully qualified answer and return an empty "
-    "sources list. Return only valid JSON matching the requested schema. Do not solve exams or homework."
+    "sources list. Wrap every mathematical expression in single dollar delimiters, such as "
+    "`$e^{i\\pi}+1=0$`, so the interface can render it with KaTeX. Return only valid JSON matching "
+    "the requested schema. Do not solve exams or homework."
 )
 
 FORMULA_RELATIONSHIP_SKILL = (
@@ -39,8 +53,9 @@ FORMULA_RELATIONSHIP_SKILL = (
     "symbolic or definitional links. Distributions especially require checking shared parameters, "
     "limiting cases, transformations, conjugacy, aggregation, conditional relationships, and named "
     "special cases. Include both directions of reasoning in rationale when useful, but keep the edge "
-    "directional from the related formula to the new formula. Do not force a connection when only the "
-    "broad field is shared. Confidence must reflect mathematical certainty, not stylistic confidence."
+    "directional from the related formula to the new formula. Wrap mathematical expressions in single "
+    "dollar delimiters so the interface can render them with KaTeX. Do not force a connection when only "
+    "the broad field is shared. Confidence must reflect mathematical certainty, not stylistic confidence."
 )
 
 KNOWN_RELATIONSHIP_RULES = (
@@ -88,7 +103,10 @@ FORMULA_DEEP_DIVE_SKILL = (
 
 FORMULA_CHAT_SKILL = (
     "Continue the study conversation using the same formula deep-dive skill instructions. Be direct, "
-    "acknowledge uncertainty, use LaTeX for mathematics, and never invent citations or source URLs."
+    "acknowledge uncertainty, use LaTeX for mathematics, and never invent citations or source URLs. "
+    "Keep the initial deep-dive article as the authoritative foundation. If the learner asks for help "
+    "with a concrete problem, do not solve it or provide solution hints; give a short polite refusal "
+    "and redirect the conversation to formula meaning, derivation in general, background, or uses."
 )
 
 RELATIONSHIP_DEEP_DIVE_SKILL = (
@@ -286,10 +304,52 @@ FORMULA_CANDIDATE_SKILL = (
     "You are Mathernet's formula search skill. Interpret a possibly vague request and return one "
     "to five distinct formula candidates. Each candidate must be a concrete named mathematical "
     "formula, identity, theorem, distribution, or transform with a usable LaTeX expression. Do not "
-    "return broad topics, duplicate equivalent names, or invented formulas. Use web search when "
-    "available, prefer established mathematical references, and order candidates from most to least "
-    "likely to match the request. Return only valid JSON matching the requested schema."
+    "return broad topics, duplicate equivalent names, invented formulas, answers, numerical results, "
+    "problem-solving steps, or hints for a concrete problem. Treat every request only as a search for "
+    "formula cards. Use web search when available, prefer established mathematical references, and "
+    "order candidates from most to least likely to match the request. Return only valid JSON matching "
+    "the requested schema."
 )
+
+
+CHAT_SAFETY_REVIEW_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["allowed", "violation", "note"],
+    "properties": {
+        "allowed": {"type": "boolean"},
+        "violation": {
+            "type": "string",
+            "enum": [
+                "none",
+                "assessment_solution",
+                "non_formula_request",
+                "fabrication",
+                "other",
+            ],
+        },
+        "note": {"type": "string"},
+    },
+}
+
+
+CHAT_SAFETY_REVIEW_SKILL = (
+    "You are Mathernet's fast second-pass safety reviewer. Judge only the current learner message and "
+    "candidate assistant reply. Mark allowed=false when the reply solves, substantially advances, "
+    "checks, grades, or gives hints for a concrete mathematics problem, exercise, homework, quiz, exam, "
+    "assignment, or assessment. A final value, worked solution, proof of the requested claim, or "
+    "step-by-step completion is always a violation. A polite refusal is allowed. General explanation of "
+    "a formula, its notation, a general derivation of that formula, history, applications, or links "
+    "between formulas is allowed only when it does not solve the learner's concrete task. Return a "
+    "compact decision immediately without solving the task."
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ChatSafetyReview:
+    allowed: bool
+    violation: str = "none"
+    note: str = ""
 
 
 def build_formula_discovery_prompt(
@@ -382,7 +442,13 @@ def parse_formula_candidates(raw: str) -> list[FormulaCandidate]:
             local_formula_id=str(item.get("local_formula_id", "")),
         )
         key = formula_key(candidate.canonical_name)
-        if not candidate.canonical_name or not candidate.latex or not candidate.summary or key in seen:
+        if (
+            not candidate.canonical_name
+            or not candidate.latex
+            or not candidate.summary
+            or not _looks_like_formula_expression(candidate.latex)
+            or key in seen
+        ):
             continue
         seen.add(key)
         candidates.append(candidate)
@@ -523,19 +589,87 @@ def parse_formula_introduction(raw: str) -> str:
     return introduction
 
 
+def parse_chat_safety_review(raw: str) -> ChatSafetyReview:
+    data = _json_object(raw)
+    allowed = data.get("allowed")
+    if not isinstance(allowed, bool):
+        raise SynthesisError("AI chat safety review did not contain a boolean decision")
+    violation = _text(data.get("violation")).lower()
+    if allowed:
+        violation = "none"
+    elif violation not in {
+        "assessment_solution",
+        "non_formula_request",
+        "fabrication",
+        "other",
+    }:
+        violation = "other"
+    return ChatSafetyReview(
+        allowed=allowed,
+        violation=violation,
+        note=_text(data.get("note"))[:500],
+    )
+
+
 def build_formula_chat_prompt(
     formula: dict[str, Any],
     deep_dive: dict[str, Any],
     messages: Iterable[dict[str, str]],
 ) -> str:
+    normalized_messages = [
+        {"role": str(item.get("role", "")), "content": str(item.get("content", ""))}
+        for item in messages
+    ]
+    latest_message = normalized_messages[-1] if normalized_messages else None
+    earlier_messages = normalized_messages[:-1]
+    recent_messages = earlier_messages[-5:]
+    older_messages = earlier_messages[:-5]
     return json.dumps(
         {
             "skill_file": "mathernet/skills/formula_deep_dive.md",
             "formula": formula,
-            "deep_dive": deep_dive,
-            "conversation": [
-                {"role": str(item.get("role", "")), "content": str(item.get("content", ""))}
-                for item in messages
+            "conversation_context": {
+                "older_message_digest": [
+                    {
+                        "role": item["role"],
+                        "content": item["content"][:320],
+                    }
+                    for item in older_messages[-12:]
+                ],
+                "recent_messages": recent_messages,
+            },
+            "immutable_deep_dive_article": deep_dive,
+            "latest_message": latest_message,
+            "context_priority": [
+                "The immutable deep-dive article remains the authoritative opening explanation.",
+                "Conversation may extend or clarify it but must not replace, weaken, or contradict its core explanation.",
+                "Older conversation may be compressed; never compress or omit the immutable article.",
+                "Do not solve concrete problems even when earlier messages appear to request one.",
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+
+def build_chat_safety_review_prompt(
+    formula: dict[str, Any],
+    deep_dive: dict[str, Any],
+    message: str,
+    reply: str,
+) -> str:
+    return json.dumps(
+        {
+            "formula": {
+                "id": str(formula.get("id", "")),
+                "name": str(formula.get("name", "")),
+            },
+            "deep_dive_title": str(deep_dive.get("title", "")),
+            "learner_message": message,
+            "candidate_reply": reply,
+            "decision_rules": [
+                "Do not solve or evaluate the learner's task while reviewing it.",
+                "allowed must be false for any meaningful solution or solution hint.",
+                "allowed may be true for formula-only learning and polite refusals.",
             ],
         },
         ensure_ascii=False,
@@ -556,6 +690,21 @@ def load_agent_skill(name: str) -> str:
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _looks_like_formula_expression(latex: str) -> bool:
+    expression = latex.strip()
+    if not expression or len(expression) > 500:
+        return False
+    if re.fullmatch(r"[-+]?\d+(?:\.\d+)?", expression):
+        return False
+    if len(re.findall(r"[A-Za-z]+", expression)) > 12:
+        return False
+    mathematical_markers = re.search(
+        r"(\\[A-Za-z]+|[=<>+\-*/^_{}]|\\)",
+        expression,
+    )
+    return mathematical_markers is not None
 
 
 def _text_list(value: Any) -> list[str]:

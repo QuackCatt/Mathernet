@@ -28,6 +28,8 @@ const state = {
   deepSessions: [],
   activeDeepSession: null,
   deepChatBusy: false,
+  deepChatStreaming: false,
+  deepChatStreamText: "",
   deepLoading: false,
   deepGenerating: false,
   introductions: {},
@@ -164,27 +166,71 @@ function truncate(value, length) {
 function latexMarkup(value, fallback = "", displayMode = false) {
   const source = String(value || fallback || "").trim();
   if (!source) return "";
+  const normalized = normalizeLatexSource(source);
   if (window.katex) {
     try {
-      return window.katex.renderToString(source, {
+      return window.katex.renderToString(normalized, {
         displayMode,
-        throwOnError: false,
+        throwOnError: true,
         strict: "ignore",
         trust: false,
         output: "html",
       });
     } catch {
-      return escapeHTML(source);
+      const alternate = String(fallback || "").trim();
+      if (alternate && alternate !== source && !alternate.includes("\\")) {
+        return escapeHTML(alternate);
+      }
+      return `<span class="formula-fallback">${escapeHTML(readableMathFallback(normalized))}</span>`;
     }
   }
-  return escapeHTML(source);
+  return `<span class="formula-fallback">${escapeHTML(readableMathFallback(normalized))}</span>`;
+}
+
+function normalizeLatexSource(value) {
+  let source = String(value || "").trim();
+  const displayMatch = source.match(/^\\\[([\s\S]*)\\\]$/);
+  if (displayMatch) return displayMatch[1].trim();
+  const inlineMatch = source.match(/^\\\(([\s\S]*)\\\)$/);
+  if (inlineMatch) return inlineMatch[1].trim();
+  if (source.startsWith("$$") && source.endsWith("$$") && source.length >= 4) {
+    return source.slice(2, -2).trim();
+  }
+  if (source.startsWith("$") && source.endsWith("$") && source.length >= 2) {
+    return source.slice(1, -1).trim();
+  }
+  return source;
+}
+
+function readableMathFallback(value) {
+  let source = String(value || "").trim();
+  if (!source) return "Mathematical expression";
+  source = source
+    .replace(/\\(?:boxed|left|right|big|Big|bigg|Bigg)\b/g, "")
+    .replace(/\\(?:mathrm|text|operatorname|mathbf|mathit|mathsf)\s*\{([^{}]*)\}/g, "$1")
+    .replace(/\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, "($1)/($2)")
+    .replace(/\\sqrt\s*\{([^{}]*)\}/g, "sqrt($1)")
+    .replace(/\\(?:cdot|times)/g, "×")
+    .replace(/\\(?:leq|le)/g, "≤")
+    .replace(/\\(?:geq|ge)/g, "≥")
+    .replace(/\\neq?/g, "≠")
+    .replace(/\\pi/g, "π")
+    .replace(/\\infty/g, "∞")
+    .replace(/\\sum/g, "sum")
+    .replace(/\\int/g, "integral")
+    .replace(/\\lim/g, "lim")
+    .replace(/\\[A-Za-z]+/g, "")
+    .replace(/[{}]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return source || "Mathematical expression";
 }
 
 function richText(value) {
   const source = String(value || "").trim();
   if (!source) return "";
   return source
-    .split(/(\$\$[\s\S]+?\$\$|\$[^$\n]+\$)/g)
+    .split(/(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\))/g)
     .map((part) => {
       if (part.startsWith("$$") && part.endsWith("$$")) {
         return latexMarkup(part.slice(2, -2), part.slice(2, -2), true);
@@ -192,9 +238,100 @@ function richText(value) {
       if (part.startsWith("$") && part.endsWith("$")) {
         return latexMarkup(part.slice(1, -1), part.slice(1, -1), false);
       }
+      if (part.startsWith("\\[") && part.endsWith("\\]")) {
+        return latexMarkup(part.slice(2, -2), part.slice(2, -2), true);
+      }
+      if (part.startsWith("\\(") && part.endsWith("\\)")) {
+        return latexMarkup(part.slice(2, -2), part.slice(2, -2), false);
+      }
       return escapeHTML(part).replaceAll("\n", "<br>");
     })
     .join("");
+}
+
+function mathematicalText(value) {
+  const source = String(value || "").trim();
+  if (!source) return "";
+  const hasMathDelimiter = /(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\))/.test(source);
+  const hasRawLatex = /\\[A-Za-z]+/.test(source);
+  const looksLikeFormula =
+    source.length <= 220
+    && source.split(/\s+/).length <= 20
+    && (/[=<>+\-*/^_]/.test(source) || /\\(?:frac|sqrt|sum|int|lim|sin|cos|tan|log|ln|exp)/.test(source))
+    && !/\b(the|this|that|is|are|from|because|relationship|rationale|explains|means|where|which|can|will)\b/i.test(source);
+  if (!hasMathDelimiter && hasRawLatex) {
+    return looksLikeFormula
+      ? latexMarkup(source, source, false)
+      : richText(autoWrapRawLatex(source));
+  }
+  return richText(source);
+}
+
+function autoWrapRawLatex(value) {
+  return String(value || "")
+    .replace(
+      /(\\(?:frac|sqrt|binom)\s*(?:\{[^{}]*\}\s*){1,2}|\\[A-Za-z]+(?:\s*\{[^{}]*\}){0,2}|[A-Za-z](?:_[A-Za-z0-9{}]+)?(?:\^[A-Za-z0-9{}]+)?)/g,
+      (match) => {
+        const boundaryText = match.replace(/^[^A-Za-z\\]+|[^A-Za-z0-9}\\]+$/g, "");
+        return boundaryText && /\\[A-Za-z]|[_^]/.test(boundaryText) ? `$${boundaryText}$` : match;
+      },
+    );
+}
+
+function trimIncompleteMath(value) {
+  const source = String(value || "");
+  let mode = "";
+  let opening = -1;
+  for (let index = 0; index < source.length; index += 1) {
+    const pair = source.slice(index, index + 2);
+    const current = source[index];
+    if (!mode && pair === "$$") {
+      mode = "$$";
+      opening = index;
+      index += 1;
+      continue;
+    }
+    if (mode === "$$" && pair === "$$") {
+      mode = "";
+      opening = -1;
+      index += 1;
+      continue;
+    }
+    if (!mode && pair === "\\[") {
+      mode = "\\]";
+      opening = index;
+      index += 1;
+      continue;
+    }
+    if (mode === "\\]" && pair === "\\]") {
+      mode = "";
+      opening = -1;
+      index += 1;
+      continue;
+    }
+    if (!mode && pair === "\\(") {
+      mode = "\\)";
+      opening = index;
+      index += 1;
+      continue;
+    }
+    if (mode === "\\)" && pair === "\\)") {
+      mode = "";
+      opening = -1;
+      index += 1;
+      continue;
+    }
+    if (!mode && current === "$") {
+      mode = "$";
+      opening = index;
+      continue;
+    }
+    if (mode === "$" && current === "$") {
+      mode = "";
+      opening = -1;
+    }
+  }
+  return opening >= 0 ? source.slice(0, opening) : source;
 }
 
 function articleMarkup(value) {
@@ -205,12 +342,12 @@ function articleMarkup(value) {
 
   const flushParagraph = () => {
     if (!paragraph.length) return;
-    blocks.push(`<p>${paragraph.map((line) => richText(line)).join("<br>")}</p>`);
+    blocks.push(`<p>${paragraph.map((line) => mathematicalText(line)).join("<br>")}</p>`);
     paragraph = [];
   };
   const flushList = () => {
     if (!list.length) return;
-    blocks.push(`<ul>${list.map((line) => `<li>${richText(line)}</li>`).join("")}</ul>`);
+    blocks.push(`<ul>${list.map((line) => `<li>${mathematicalText(line)}</li>`).join("")}</ul>`);
     list = [];
   };
   const flushAll = () => {
@@ -227,7 +364,7 @@ function articleMarkup(value) {
     } else if (heading) {
       flushAll();
       const level = Math.min(6, Math.max(3, heading[1].length + 1));
-      blocks.push(`<h${level}>${richText(heading[2])}</h${level}>`);
+      blocks.push(`<h${level}>${mathematicalText(heading[2])}</h${level}>`);
     } else if (listItem) {
       flushParagraph();
       list.push(listItem[1]);
@@ -257,8 +394,8 @@ function deepArticleMarkup(article) {
       .map(
         (section) => `
           <section class="deep-article-section">
-            <p class="deep-article-subtitle">${escapeHTML(section.subtitle || kindLabels[section.kind] || "Context")}</p>
-            <h3>${escapeHTML(section.heading)}</h3>
+            <p class="deep-article-subtitle">${mathematicalText(section.subtitle || kindLabels[section.kind] || "Context")}</p>
+            <h3>${mathematicalText(section.heading)}</h3>
             <div class="deep-article-section-body">${articleMarkup(section.body)}</div>
           </section>
         `,
@@ -632,7 +769,7 @@ function renderLearning() {
 }
 
 function updateDeepDiveControls() {
-  const busy = state.deepLoading || state.deepGenerating || state.deepChatBusy;
+  const busy = state.deepLoading || state.deepGenerating || state.deepChatBusy || state.deepChatStreaming;
   const unconfirmedManualRelationship =
     state.deepDiveMode === "relationship"
     && state.deepDiveEdge?.created_by === "manual"
@@ -684,11 +821,32 @@ function renderDeepDive({ scrollToBottom = false } = {}) {
               (message) => `
                 <article class="deep-message ${message.role === "user" ? "is-user" : "is-assistant"}">
                   <span class="deep-message-role">${message.role === "user" ? "You" : "Mathernet"}</span>
-                  <div class="deep-message-body">${richText(message.content)}</div>
+                  <div class="deep-message-body">${mathematicalText(message.content)}</div>
                 </article>
               `,
             )
             .join("")}
+        </section>`
+      : ""}
+    ${state.deepChatBusy
+      ? `<section class="deep-chat-log deep-chat-log-pending" aria-live="polite" aria-label="Mathernet is thinking">
+          <article class="deep-message is-assistant is-thinking">
+            <span class="deep-message-role">Mathernet</span>
+            <div class="deep-message-body">
+              <div class="deep-thinking-bubble" aria-label="Mathernet is thinking">
+                <span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span>Thinking</span>
+              </div>
+            </div>
+          </article>
+        </section>`
+      : ""}
+    ${state.deepChatStreaming
+      ? `<section class="deep-chat-log deep-chat-log-pending" aria-live="polite" aria-label="Mathernet is writing">
+          <article class="deep-message is-assistant is-streaming">
+            <span class="deep-message-role">Mathernet</span>
+            <div class="deep-message-body">${richText(trimIncompleteMath(state.deepChatStreamText))}<span class="stream-caret" aria-hidden="true"></span></div>
+          </article>
         </section>`
       : ""}
     ${sources.length
@@ -845,6 +1003,8 @@ async function submitDeepChat(event) {
   const session = state.activeDeepSession;
   if (!message || !formulaId || !session || state.deepChatBusy) return;
   state.deepChatBusy = true;
+  state.deepChatStreaming = false;
+  state.deepChatStreamText = "";
   elements.deepChatInput.value = "";
   elements.deepChatInput.disabled = true;
   setBusy(elements.deepChatSubmit, true, "Thinking…");
@@ -860,19 +1020,62 @@ async function submitDeepChat(event) {
       `${deepDiveBasePath()}/sessions/${encodeURIComponent(session.id)}/chat`,
       { method: "POST", body: JSON.stringify({ message }) },
     );
-    state.activeDeepSession = result.session;
+    const finalSession = result.session;
+    const finalMessages = Array.isArray(finalSession.messages) ? finalSession.messages : [];
+    const messageTail = finalMessages.slice(0, -1);
+    state.deepChatBusy = false;
+    state.deepChatStreaming = true;
+    state.deepChatStreamText = "";
+    state.activeDeepSession = {
+      ...finalSession,
+      messages: messageTail,
+    };
+    elements.deepChatStatus.textContent = "Mathernet is writing a clear response…";
+    renderDeepDive({ scrollToBottom: true });
+    await streamDeepChatReply(result.reply || "");
+    state.activeDeepSession = finalSession;
     state.deepSessions = await api(`${deepDiveBasePath()}/sessions`).then((payload) => payload.sessions || []);
     elements.deepChatStatus.textContent = "Ask a follow-up whenever you are ready.";
   } catch (error) {
-    state.activeDeepSession = session;
+    state.activeDeepSession = {
+      ...session,
+      messages: [...(session.messages || []), { role: "user", content: message }],
+    };
     elements.deepChatStatus.textContent = error.message;
     showToast(error.message, "error");
   } finally {
     state.deepChatBusy = false;
+    state.deepChatStreaming = false;
+    state.deepChatStreamText = "";
     elements.deepChatInput.disabled = false;
     setBusy(elements.deepChatSubmit, false);
     renderDeepDive({ scrollToBottom: true });
     elements.deepChatInput.focus();
+  }
+}
+
+async function streamDeepChatReply(reply) {
+  const characters = Array.from(String(reply || ""));
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (!characters.length || reducedMotion) {
+    state.deepChatStreamText = String(reply || "");
+    renderDeepDive({ scrollToBottom: true });
+    return;
+  }
+  renderDeepDive({ scrollToBottom: true });
+  const streamBody = elements.deepDiveContent.querySelector(
+    ".deep-message.is-streaming .deep-message-body",
+  );
+  const updateStreamBody = () => {
+    if (!streamBody) return;
+    streamBody.innerHTML = `${richText(trimIncompleteMath(state.deepChatStreamText))}<span class="stream-caret" aria-hidden="true"></span>`;
+    elements.deepDiveContent.scrollTop = elements.deepDiveContent.scrollHeight;
+  };
+  const chunkSize = Math.max(1, Math.ceil(characters.length / 180));
+  for (let index = 0; index < characters.length; index += chunkSize) {
+    state.deepChatStreamText = characters.slice(0, index + chunkSize).join("");
+    updateStreamBody();
+    await new Promise((resolve) => window.setTimeout(resolve, 16));
   }
 }
 
@@ -1436,7 +1639,7 @@ function renderFormulaCandidates(query, candidates) {
           role="math"
           aria-label="${escapeHTML(candidate.latex)}"
         >${latexMarkup(candidate.latex, candidate.latex, true)}</div>
-        <p>${escapeHTML(candidate.summary)}</p>
+        <p>${mathematicalText(candidate.summary)}</p>
         <span class="candidate-meta">
           <span>${escapeHTML(candidate.topic || "Mathematics")}</span>
           <span>${confidence}% match</span>
@@ -1699,7 +1902,7 @@ function openRelationshipExploreDialog({ edge }) {
       ? "Your relationship · AI unconfirmed"
       : "";
   elements.relationshipExploreOrigin.hidden = !elements.relationshipExploreOrigin.textContent;
-  elements.relationshipExploreNote.textContent = edge.rationale || "Relationship unclear.";
+  elements.relationshipExploreNote.innerHTML = mathematicalText(edge.rationale || "Relationship unclear.");
   elements.relationshipExploreDescription.textContent = manualUnconfirmed
     ? "This deep dive will preserve only the note you entered when creating the relationship."
     : "Mathernet will create one saved exploration of how these formulas connect. You can continue the conversation below it.";

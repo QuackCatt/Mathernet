@@ -6,6 +6,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from .agent_skills import AI_SAFETY_POLICY
 from .errors import SynthesisError
 from .http_client import open_url
 from .models import AIModule, EdgeRelation
@@ -104,6 +105,7 @@ class OpenAIResponsesSynthesizer:
             for source in sources
         ]
         system_prompt = (
+            f"{AI_SAFETY_POLICY}\n"
             "You are Mathernet, a study-only formula learning assistant. "
             "Use only supplied source material for factual claims. Never invent a formula, derivation, source, or citation. "
             "Compare the request with every active-map formula and preserve every meaningful mathematical relationship. "

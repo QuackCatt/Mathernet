@@ -181,6 +181,7 @@ class GatewayTests(unittest.TestCase):
         self.assertIn('"introduction"', request.system_prompt)
         self.assertIn('"sections"', request.system_prompt)
         self.assertIn("Omit a topic instead of padding the article", request.system_prompt)
+        self.assertIn("Never solve, complete, grade, or check", request.system_prompt)
 
     def test_formula_introduction_requests_include_the_local_skill(self):
         captured_request = {}
@@ -205,6 +206,52 @@ class GatewayTests(unittest.TestCase):
         self.assertIn("formula introduction skill", request.system_prompt)
         self.assertIn("110-150 words", request.system_prompt)
         self.assertIn("Required JSON schema:", request.system_prompt)
+
+    def test_chat_replies_are_reviewed_by_a_second_fast_model_call(self):
+        captured_requests = []
+
+        class FakeAdapter:
+            def complete(self, request):
+                captured_requests.append(request)
+                if len(captured_requests) == 1:
+                    return ProviderResponse(
+                        text="The formula describes the relationship directly.",
+                        raw={},
+                    )
+                return ProviderResponse(
+                    text=json.dumps({
+                        "allowed": False,
+                        "violation": "assessment_solution",
+                        "note": "The reply advances a concrete problem.",
+                    }),
+                    raw={},
+                )
+
+        gateway = ProviderGateway(
+            GatewayConfig(provider="deepseek", api_key="synthetic-test-token")
+        )
+        deep_dive = {
+            "title": "Formula exploration",
+            "article": {"introduction": "A durable explanation.", "sections": []},
+            "sources": [],
+        }
+        with patch("mathernet.gateway.adapter_for_config", return_value=FakeAdapter()):
+            reply = gateway.chat(
+                {"id": "formula_test", "name": "Test formula"},
+                deep_dive,
+                [{"role": "user", "content": "Continue."}],
+            )
+            review = gateway.review_chat_response(
+                {"id": "formula_test", "name": "Test formula"},
+                deep_dive,
+                "Continue.",
+                reply,
+            )
+
+        self.assertFalse(review.allowed)
+        self.assertEqual(review.violation, "assessment_solution")
+        self.assertIn("fast second-pass safety reviewer", captured_requests[1].system_prompt)
+        self.assertIn("immutable_deep_dive_article", captured_requests[0].user_prompt)
 
     def test_relationship_validation_uses_web_research_schema(self):
         captured_request = {}

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mathernet.agent_skills import parse_formula_deep_dive
+from mathernet.agent_skills import ChatSafetyReview, parse_formula_deep_dive
 from mathernet.api import handle_api_request, openapi_document
 from mathernet.deep_dive_sessions import DeepDiveSessionStore
 from mathernet.errors import NotFoundError, SynthesisError
@@ -21,6 +21,8 @@ class FakeDeepDiveGateway:
         self.relationship_calls = []
         self.relationship_validation_calls = []
         self.chat_calls = []
+        self.review_calls = []
+        self.chat_review_allowed = True
         self.relationship_sources = [
             {
                 "title": "Relationship reference",
@@ -66,6 +68,14 @@ class FakeDeepDiveGateway:
     def chat(self, formula, deep_dive, messages):
         self.chat_calls.append((formula, deep_dive, messages))
         return "The key idea is $x=1$."
+
+    def review_chat_response(self, formula, deep_dive, message, reply):
+        self.review_calls.append((formula, deep_dive, message, reply))
+        return ChatSafetyReview(
+            allowed=self.chat_review_allowed,
+            violation="none" if self.chat_review_allowed else "assessment_solution",
+            note="Checked by the second-pass reviewer.",
+        )
 
     def deep_dive_relationship(self, relationship, sources):
         self.relationship_calls.append((relationship, sources))
@@ -225,6 +235,75 @@ class DeepDiveTests(unittest.TestCase):
 
         persisted = self.sessions.get("formula_euler_identity", created["id"])
         self.assertEqual(len(persisted["messages"]), 2)
+
+    def test_second_pass_review_withdraws_unsafe_reply(self):
+        created = handle_api_request(
+            self.service,
+            "POST",
+            "/api/formulas/formula_euler_identity/deep-dive/sessions",
+            {},
+        ).payload
+        self.gateway.chat_review_allowed = False
+
+        response = handle_api_request(
+            self.service,
+            "POST",
+            f"/api/formulas/formula_euler_identity/deep-dive/sessions/{created['id']}/chat",
+            {"message": "Continue with the formula."},
+        )
+
+        self.assertEqual(response.status, 200)
+        self.assertTrue(response.payload["withdrawn"])
+        self.assertIn("withdrawn", response.payload["reply"])
+        self.assertNotIn("$x=1$", response.payload["reply"])
+        self.assertEqual(len(self.gateway.review_calls), 1)
+        self.assertEqual(
+            self.gateway.review_calls[0][3],
+            "The key idea is $x=1$.",
+        )
+        persisted = self.sessions.get("formula_euler_identity", created["id"])
+        self.assertEqual(persisted["messages"][-1]["role"], "assistant")
+        self.assertIn("withdrawn", persisted["messages"][-1]["content"])
+
+    def test_assessment_request_is_refused_without_solving(self):
+        created = handle_api_request(
+            self.service,
+            "POST",
+            "/api/formulas/formula_euler_identity/deep-dive/sessions",
+            {},
+        ).payload
+
+        response = handle_api_request(
+            self.service,
+            "POST",
+            f"/api/formulas/formula_euler_identity/deep-dive/sessions/{created['id']}/chat",
+            {"message": "Please solve this homework problem for me."},
+        )
+
+        self.assertEqual(response.status, 200)
+        self.assertIn("cannot help solve", response.payload["reply"])
+        self.assertEqual(self.gateway.chat_calls, [])
+        self.assertEqual(self.gateway.review_calls, [])
+
+    def test_initial_article_is_unchanged_after_long_conversation(self):
+        created = handle_api_request(
+            self.service,
+            "POST",
+            "/api/formulas/formula_euler_identity/deep-dive/sessions",
+            {},
+        ).payload
+        original_article = created["article"]
+
+        for number in range(8):
+            handle_api_request(
+                self.service,
+                "POST",
+                f"/api/formulas/formula_euler_identity/deep-dive/sessions/{created['id']}/chat",
+                {"message": f"Tell me more, point {number}."},
+            )
+
+        persisted = self.sessions.get("formula_euler_identity", created["id"])
+        self.assertEqual(persisted["article"], original_article)
 
     def test_chat_keeps_user_message_when_reply_fails(self):
         created = handle_api_request(

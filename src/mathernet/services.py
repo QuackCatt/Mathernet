@@ -34,6 +34,25 @@ from .rules import (
     MAX_QUERY_LENGTH,
     validate_bounded_text,
 )
+from .safety import assess_request
+
+
+ASSESSMENT_CHAT_NOTICE = (
+    "Mathernet cannot help solve that specific mathematics problem or assessed question. "
+    "Please ask about a formula's meaning, general derivation, background, relationships, or uses instead."
+)
+WITHDRAWN_CHAT_NOTICE = (
+    "That response was withdrawn because it did not meet Mathernet's formula-learning safety rules. "
+    "Please ask about a formula or mathematical concept instead."
+)
+NON_FORMULA_CHAT_NOTICE = (
+    "Mathernet can only discuss mathematical formulas and related concepts. "
+    "Please ask about a formula's meaning, derivation, background, relationships, or uses."
+)
+FABRICATION_CHAT_NOTICE = (
+    "Mathernet cannot fabricate or alter a formula explanation to make an unsupported answer appear correct. "
+    "Please ask a question about the formula itself instead."
+)
 
 
 class LearningAgent(Protocol):
@@ -77,6 +96,14 @@ class DeepDiveGateway(Protocol):
         deep_dive: dict[str, Any],
         messages: list[dict[str, str]],
     ) -> str: ...
+
+    def review_chat_response(
+        self,
+        formula: dict[str, Any],
+        deep_dive: dict[str, Any],
+        message: str,
+        reply: str,
+    ) -> Any: ...
 
 
 class MathernetService:
@@ -773,14 +800,14 @@ class MathernetService:
         messages = list(session.get("messages", []))
         messages.append({"role": "user", "content": message})
         session = self.deep_dive_sessions.append_message(node.id, session_id, "user", message)
-        reply = self._require_ai_gateway().chat(
-            self._formula_context(node),
-            {"title": session["title"], "article": session["article"], "sources": session["sources"]},
-            messages[-20:],
+        return self._complete_reviewed_chat(
+            owner_id=node.id,
+            session_id=session_id,
+            session=session,
+            context=self._formula_context(node),
+            message=message,
+            messages=messages,
         )
-        reply = validate_bounded_text(reply, "reply", max_length=MAX_SESSION_REPLY_LENGTH)
-        session = self.deep_dive_sessions.append_message(node.id, session_id, "assistant", reply)
-        return {"reply": reply, "session": session}
 
     def list_relationship_deep_dive_sessions(self, edge_id: str) -> list[dict[str, Any]]:
         self.repository.get_edge(edge_id)
@@ -864,27 +891,70 @@ class MathernetService:
             "user",
             message,
         )
-        reply = self._require_ai_gateway().chat(
-            self._relationship_context(edge),
-            {
-                "title": session["title"],
-                "article": session["article"],
-                "sources": session["sources"],
-            },
-            messages[-20:],
+        return self._complete_reviewed_chat(
+            owner_id=owner_id,
+            session_id=session_id,
+            session=session,
+            context=self._relationship_context(edge),
+            message=message,
+            messages=messages,
         )
-        reply = validate_bounded_text(
-            reply,
-            "reply",
-            max_length=MAX_SESSION_REPLY_LENGTH,
-        )
+
+    def _complete_reviewed_chat(
+        self,
+        *,
+        owner_id: str,
+        session_id: str,
+        session: dict[str, Any],
+        context: dict[str, Any],
+        message: str,
+        messages: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        decision = assess_request(message)
+        if not decision.allowed:
+            reason_code = decision.reason_code.value if decision.reason_code else ""
+            if reason_code == "fabrication_request":
+                notice = FABRICATION_CHAT_NOTICE
+            elif reason_code == "non_formula_request":
+                notice = NON_FORMULA_CHAT_NOTICE
+            else:
+                notice = ASSESSMENT_CHAT_NOTICE
+            session = self.deep_dive_sessions.append_message(
+                owner_id,
+                session_id,
+                "assistant",
+                notice,
+            )
+            return {
+                "reply": notice,
+                "session": session,
+                "reviewed": True,
+                "withdrawn": False,
+            }
+
+        gateway = self._require_ai_gateway()
+        deep_dive = {
+            "title": session["title"],
+            "article": session["article"],
+            "sources": session["sources"],
+        }
+        reply = gateway.chat(context, deep_dive, messages)
+        reply = validate_bounded_text(reply, "reply", max_length=MAX_SESSION_REPLY_LENGTH)
+        review = gateway.review_chat_response(context, deep_dive, message, reply)
+        allowed = bool(getattr(review, "allowed", False))
+        visible_reply = reply if allowed else WITHDRAWN_CHAT_NOTICE
         session = self.deep_dive_sessions.append_message(
             owner_id,
             session_id,
             "assistant",
-            reply,
+            visible_reply,
         )
-        return {"reply": reply, "session": session}
+        return {
+            "reply": visible_reply,
+            "session": session,
+            "reviewed": True,
+            "withdrawn": not allowed,
+        }
 
     def export_graph(self) -> dict[str, Any]:
         return self.repository.document.to_dict()

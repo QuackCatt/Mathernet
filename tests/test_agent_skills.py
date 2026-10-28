@@ -5,8 +5,12 @@ from pathlib import Path
 
 from mathernet.agent import FormulaAgent, stable_id
 from mathernet.agent_skills import (
+    AI_SAFETY_POLICY,
+    FORMULA_RELATIONSHIP_SKILL,
+    FORMULA_SYNTHESIS_SKILL,
     FormulaDiscovery,
     FormulaCandidate,
+    build_formula_chat_prompt,
     build_relationship_deep_dive_prompt,
     load_agent_skill,
     parse_formula_discovery,
@@ -167,6 +171,57 @@ class AgentSkillTests(unittest.TestCase):
     def test_formula_candidate_parser_rejects_empty_results(self):
         with self.assertRaises(SynthesisError):
             parse_formula_candidates(json.dumps({"candidates": []}))
+
+    def test_formula_candidate_parser_rejects_answers_instead_of_formulas(self):
+        with self.assertRaises(SynthesisError):
+            parse_formula_candidates(json.dumps({
+                "candidates": [{
+                    "canonical_name": "Answer",
+                    "latex": "42",
+                    "summary": "The final answer is 42.",
+                    "topic": "algebra",
+                    "reason": "Solves the learner's question.",
+                    "confidence": 1,
+                    "local_formula_id": "",
+                }],
+            }))
+
+    def test_chat_context_compresses_old_messages_but_keeps_initial_article(self):
+        article = {
+            "title": "Original explanation",
+            "article": {
+                "introduction": "This exact opening explanation must remain clear.",
+                "sections": [],
+            },
+            "sources": [],
+        }
+        messages = [
+            {"role": "user" if index % 2 == 0 else "assistant", "content": f"history {index} " + "x" * 400}
+            for index in range(12)
+        ]
+        messages.append({"role": "user", "content": "Continue explaining the formula."})
+
+        prompt = json.loads(build_formula_chat_prompt(
+            {"id": "formula_test", "name": "Test formula"},
+            article,
+            messages,
+        ))
+
+        self.assertEqual(prompt["immutable_deep_dive_article"], article)
+        self.assertEqual(prompt["latest_message"]["content"], "Continue explaining the formula.")
+        self.assertGreater(len(prompt["conversation_context"]["older_message_digest"]), 0)
+        self.assertLess(
+            len(prompt["conversation_context"]["older_message_digest"][0]["content"]),
+            400,
+        )
+        self.assertIn("never compress or omit", " ".join(prompt["context_priority"]))
+
+    def test_safety_policy_forbids_concrete_problem_solutions(self):
+        self.assertIn("Never solve, complete, grade, or check", AI_SAFETY_POLICY)
+
+    def test_formula_prompts_require_renderable_latex_delimiters(self):
+        self.assertIn("single dollar delimiters", FORMULA_SYNTHESIS_SKILL)
+        self.assertIn("single dollar delimiters", FORMULA_RELATIONSHIP_SKILL)
 
     def test_discovery_opens_an_existing_card_before_synthesis(self):
         existing = self.add_formula("formula_existing", "Existing formula", ["local alias"])
