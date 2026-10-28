@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .errors import NotFoundError, StorageError, ValidationError
+from .fsutil import chmod_private
 from .rules import validate_bounded_text
 
 
@@ -18,6 +19,10 @@ def _now() -> str:
 class MapSessionStore:
     def __init__(self, path: Path | str = "data/map_sessions.json"):
         self.path = Path(path).expanduser()
+
+    @property
+    def exists(self) -> bool:
+        return self.path.exists()
 
     def list(self) -> list[dict[str, Any]]:
         sessions = [item for item in self._load() if isinstance(item, dict)]
@@ -151,9 +156,9 @@ class MapSessionStore:
         temp = self.path.with_suffix(".tmp")
         try:
             temp.write_text(payload, encoding="utf-8")
-            os.chmod(temp, 0o600)
+            chmod_private(temp)
             os.replace(temp, self.path)
-            os.chmod(self.path, 0o600)
+            chmod_private(self.path)
         except OSError as error:
             temp.unlink(missing_ok=True)
             raise StorageError(f"could not write map sessions: {error}") from error

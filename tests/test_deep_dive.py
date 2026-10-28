@@ -7,6 +7,8 @@ from mathernet.agent_skills import ChatSafetyReview, parse_formula_deep_dive
 from mathernet.api import handle_api_request, openapi_document
 from mathernet.deep_dive_sessions import DeepDiveSessionStore
 from mathernet.errors import NotFoundError, SynthesisError
+from mathernet.formula_introductions import FormulaIntroductionStore
+from mathernet.map_sessions import MapSessionStore
 from mathernet.repository import GraphRepository
 from mathernet.services import MathernetService
 from tests.test_data import synthetic_graph_payload
@@ -109,10 +111,16 @@ class DeepDiveTests(unittest.TestCase):
         self.repository.save()
         self.gateway = FakeDeepDiveGateway()
         self.sessions = DeepDiveSessionStore(Path(self.temporary.name) / "sessions.json")
+        self.introductions = FormulaIntroductionStore(
+            Path(self.temporary.name) / "introductions.json"
+        )
+        self.map_sessions = MapSessionStore(Path(self.temporary.name) / "map_sessions.json")
         self.service = MathernetService(
             self.repository,
             ai_gateway=self.gateway,
             deep_dive_sessions=self.sessions,
+            formula_introductions=self.introductions,
+            map_sessions=self.map_sessions,
         )
 
     def tearDown(self):
@@ -457,7 +465,7 @@ class DeepDiveTests(unittest.TestCase):
 
     def test_confirmed_manual_relationship_generates_ai_content_with_user_note(self):
         self.gateway.relationship_explanation_reasonable = True
-        self.gateway.relationship_web_supported = False
+        self.gateway.relationship_web_supported = True
         edge = self.service.add_edge(
             source_ref="formula_taylor_series",
             target_ref="formula_complex_exponential",
@@ -505,6 +513,21 @@ class DeepDiveTests(unittest.TestCase):
         self.assertIn("relationship links", created.payload["article"]["introduction"])
         self.assertEqual(len(self.gateway.relationship_calls), 1)
 
+    def test_reasonable_but_uncited_manual_relationship_is_unverified(self):
+        self.gateway.relationship_validation_sources = []
+        self.gateway.relationship_explanation_reasonable = True
+        self.gateway.relationship_web_supported = False
+        edge = self.service.add_edge(
+            source_ref="formula_taylor_series",
+            target_ref="formula_complex_exponential",
+            relation="derivation_basis",
+            rationale="The model thinks this connection is reasonable.",
+            source_ids=[],
+            manual=True,
+        )
+        self.assertEqual(edge["evidence_status"], "unverified")
+        self.assertFalse(edge["confirmed_by_evidence"])
+
     def test_unexplained_manual_relationship_without_support_is_unverified(self):
         self.gateway.relationship_sources = []
         self.gateway.relationship_validation_sources = []
@@ -546,6 +569,64 @@ class DeepDiveTests(unittest.TestCase):
             manual=True,
         )
         self.assertEqual(edge["created_by"], "manual")
+
+    def test_deleting_formula_removes_deep_dives_and_introduction(self):
+        node_id = "formula_euler_identity"
+        self.introductions.save(node_id, "Saved introduction text.")
+        session_payload = {
+            "title": "Saved dive",
+            "article": {"introduction": "A saved dive.", "sections": []},
+            "sources": [],
+            "warnings": [],
+        }
+        self.sessions.create(node_id, session_payload)
+        edge = self.repository.add_edge(
+            edge_id="edge_cascade",
+            source_id=node_id,
+            target_id="formula_complex_exponential",
+            relation="generalization",
+            rationale="Cascade test relationship.",
+            sources=[],
+        )
+        self.repository.save()
+        self.sessions.create("relationship:edge_cascade", session_payload)
+
+        result = self.service.delete_formula(node_id)
+
+        self.assertEqual(result["deleted_deep_dive_sessions"], 2)
+        self.assertTrue(result["deleted_introduction"])
+        self.assertEqual(self.sessions.list(node_id), [])
+        self.assertEqual(self.sessions.list("relationship:edge_cascade"), [])
+        self.assertIsNone(self.introductions.get(node_id))
+        self.assertNotIn(
+            edge.id,
+            [item.id for item in self.repository.document.edges],
+        )
+
+    def test_deleting_edge_removes_its_relationship_sessions(self):
+        edge = self.repository.add_edge(
+            edge_id="edge_delete",
+            source_id="formula_taylor_series",
+            target_id="formula_complex_exponential",
+            relation="derivation_basis",
+            rationale="Delete test relationship.",
+            sources=[],
+        )
+        self.repository.save()
+        self.sessions.create(
+            "relationship:edge_delete",
+            {
+                "title": "Relationship dive",
+                "article": {"introduction": "A saved relationship dive.", "sections": []},
+                "sources": [],
+                "warnings": [],
+            },
+        )
+
+        result = self.service.delete_edge(edge.id)
+
+        self.assertEqual(result["deleted_deep_dive_sessions"], 1)
+        self.assertEqual(self.sessions.list("relationship:edge_delete"), [])
 
     def test_openapi_exposes_deep_dive_session_routes(self):
         paths = openapi_document()["paths"]

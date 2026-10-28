@@ -37,7 +37,7 @@ def node(identifier, name, aliases=None):
         latex=rf"\text{{{name}}}",
         aliases=aliases or [],
         topic_tags=["mathematics"],
-        ai_module=AIModule("summary", "explanation"),
+        ai_module=AIModule("summary"),
         user_module=UserModule(updated_at="2026-10-12T00:00:00+00:00"),
         status=FormulaStatus.NEW,
         sources=["src_rule"],

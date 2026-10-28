@@ -1,3 +1,4 @@
+import errno
 import io
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -42,7 +43,26 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertTrue(server.closed)
         self.assertIn("URL: http://127.0.0.1:8765", output.getvalue())
-        self.assertIn("Port: 8765", output.getvalue())
+        self.assertNotIn("Port:", output.getvalue())
+
+    def test_busy_port_advances_and_only_the_url_is_printed(self):
+        settings = Settings.from_env()
+        server = FakeServer(("127.0.0.1", 8766))
+        output = io.StringIO()
+        with (
+            patch("mathernet.launcher.build_service", return_value=object()),
+            patch(
+                "mathernet.launcher.create_server",
+                side_effect=[OSError(errno.EADDRINUSE, "address in use"), server],
+            ),
+            redirect_stdout(output),
+        ):
+            result = start_api(settings)
+
+        self.assertEqual(result, 0)
+        self.assertTrue(server.closed)
+        self.assertIn("URL: http://127.0.0.1:8766", output.getvalue())
+        self.assertNotIn("Port:", output.getvalue())
 
 
 if __name__ == "__main__":

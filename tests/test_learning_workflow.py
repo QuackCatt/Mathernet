@@ -1,35 +1,49 @@
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
+from mathernet.agent import FormulaAgent
 from mathernet.api import handle_api_request
-from mathernet.config import Settings
-from mathernet.services import build_service
+from mathernet.gateway import GatewayStore
+from mathernet.llm import SynthesisResult
+from mathernet.models import AIModule, SearchResult
+from mathernet.repository import GraphRepository
+from mathernet.services import MathernetService
 
 
-ROOT = Path(__file__).resolve().parents[1]
+class StubSynthesizer:
+    def synthesize(self, query, sources, map_context=None):
+        return SynthesisResult(
+            name=query,
+            latex="x=1",
+            aliases=[],
+            topic_tags=["mathematics"],
+            ai_module=AIModule(f"A compact summary of {query}."),
+            sources=[
+                SearchResult(
+                    "Synthetic reference",
+                    "https://example.edu/synthetic",
+                    "Example University",
+                    "Synthetic excerpt.",
+                )
+            ],
+        )
+
+
+def build_test_service(root: Path) -> MathernetService:
+    repository = GraphRepository(root / "graph.json")
+    return MathernetService(
+        repository,
+        FormulaAgent(repository, StubSynthesizer()),
+        GatewayStore(root / "gateway.json"),
+    )
 
 
 class LearningWorkflowTests(unittest.TestCase):
-    def test_configured_mcp_and_offline_synthesis_create_a_persistent_card(self):
-        fixture = ROOT / "tests" / "fixtures" / "fake_mcp_server.py"
+    def test_learning_creates_and_reuses_a_persistent_card(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            settings = Settings(
-                data_path=root / "graph.json",
-                search_cache_path=root / "search_cache.json",
-                mcp_transport="stdio",
-                mcp_command=(sys.executable, str(fixture)),
-                mcp_http_url="",
-                mcp_tool_name="search",
-                mcp_headers="",
-                openai_api_key="",
-                openai_model="test-model",
-                approved_publishers=("Wikipedia",),
-                request_timeout_seconds=5,
-            )
-            service = build_service(settings)
+            service = build_test_service(root)
 
             created = handle_api_request(
                 service,
@@ -44,8 +58,6 @@ class LearningWorkflowTests(unittest.TestCase):
                 "synthetic concept",
             )
             self.assertEqual(len(created.payload["formula"]["sources"]), 1)
-            self.assertNotIn("warnings", created.payload)
-            self.assertNotIn("unresolved_dependencies", created.payload)
 
             reused = handle_api_request(
                 service,
@@ -56,7 +68,7 @@ class LearningWorkflowTests(unittest.TestCase):
             self.assertEqual(reused.status, 200)
             self.assertFalse(reused.payload["created"])
 
-            persisted = build_service(settings).get_formula_card("synthetic concept")
+            persisted = build_test_service(root).get_formula_card("synthetic concept")
             self.assertEqual(
                 persisted["formula"]["ai_module"]["summary"],
                 created.payload["formula"]["formula"]["ai_module"]["summary"],

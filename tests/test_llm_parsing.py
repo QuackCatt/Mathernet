@@ -2,7 +2,7 @@ import json
 import unittest
 
 from mathernet.errors import SynthesisError
-from mathernet.gateway import _extract_provider_text
+from mathernet.providers import extract_provider_text as _extract_provider_text
 from mathernet.llm import parse_synthesis_result
 
 
@@ -39,7 +39,7 @@ class LlmParsingTests(unittest.TestCase):
         self.assertEqual(result.dependencies[0].prerequisite_name, "Euler's formula")
         self.assertEqual(result.sources[0].url, "https://example.edu/euler")
 
-    def test_builds_ai_module_from_top_level_summary_and_explanation(self):
+    def test_builds_ai_module_from_top_level_summary(self):
         result = parse_synthesis_result(json.dumps({
             "name": "Quadratic formula",
             "latex": "x=1",
@@ -47,7 +47,8 @@ class LlmParsingTests(unittest.TestCase):
             "explanation": "Explanation",
         }))
         self.assertEqual(result.ai_module.summary, "Summary")
-        self.assertEqual(result.ai_module.explanation, "Explanation")
+        self.assertEqual(result.ai_module.explanation, "")
+        self.assertEqual(result.ai_module.derivation_steps, [])
 
     def test_extracts_content_blocks_and_tool_arguments(self):
         text = _extract_provider_text({

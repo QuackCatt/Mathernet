@@ -11,8 +11,7 @@ from .config import Settings
 from .deep_dive_sessions import DeepDiveSessionStore, MAX_SESSION_MESSAGE_LENGTH, MAX_SESSION_REPLY_LENGTH
 from .errors import ConflictError, NotFoundError, SynthesisError, ValidationError
 from .formula_introductions import FormulaIntroductionStore
-from .llm import RuleBasedSynthesizer
-from .gateway import GatewayConfig, GatewayStore, ProviderGateway, SearchGateway
+from .gateway import GatewayConfig, GatewayStore, ProviderGateway
 from .map_sessions import MapSessionStore
 from .models import (
     DependencyEdge,
@@ -22,12 +21,12 @@ from .models import (
     FormulaStatus,
     SourceRecord,
     VerificationStatus,
+    is_web_url,
     utc_now,
 )
 from .normalization import formula_key, normalize_text
 from .providers import fetch_provider_models, is_transient_provider_error, provider_catalog
 from .repository import GraphRepository
-from .retrieval import provider_from_settings
 from .rules import (
     ACCEPTED_EDGE_STATUSES,
     ACTIVE_EDGE_STATUSES,
@@ -132,33 +131,22 @@ class MathernetService:
             **config.public_dict(),
             "providers": [provider["id"] for provider in providers],
             "provider_presets": providers,
-            "search_engines": ["google", "bing", "yahoo", "baidu"],
             "first_run": not config.ai_configured,
         }
 
     def save_gateway_config(self, payload: dict[str, Any]) -> dict[str, Any]:
         current = self.gateway_store.load()
         payload = dict(payload)
-        aliases = {
-            "transport": "mcp_transport",
-            "command": "mcp_command",
-            "http_url": "mcp_http_url",
-            "tool_name": "mcp_tool_name",
-            "headers_json": "mcp_headers",
-        }
-        for source, target in aliases.items():
-            if source in payload and target not in payload:
-                payload[target] = payload[source]
         fields = {
             "provider", "api_key", "model", "api_format", "base_url", "endpoint_path",
-            "auth_style", "search_engine", "search_api_key",
-            "search_engine_id", "mcp_transport", "mcp_command", "mcp_http_url",
-            "mcp_tool_name", "mcp_headers",
+            "auth_style",
         }
         values = {}
         for field in fields:
             value = payload.get(field, getattr(current, field))
-            if field in {"api_key", "search_api_key", "mcp_headers"} and not str(value).strip():
+            if value is None:
+                value = ""
+            if field == "api_key" and not str(value).strip():
                 value = getattr(current, field)
             values[field] = value
         provider = str(values.get("provider", "")).strip().lower()
@@ -170,9 +158,8 @@ class MathernetService:
                     values[field] = ""
             if "model" not in payload:
                 values["model"] = ""
-        search_engine = str(values.get("search_engine", "")).strip().lower()
-        if search_engine and search_engine not in {"google", "bing", "yahoo", "baidu"}:
-            raise ValidationError("unsupported search engine")
+            if not str(payload.get("api_key", "")).strip():
+                values["api_key"] = ""
         config = GatewayConfig(
             provider=provider,
             api_key=str(values.get("api_key", current.api_key)),
@@ -181,14 +168,6 @@ class MathernetService:
             base_url=str(values.get("base_url", current.base_url)),
             endpoint_path=str(values.get("endpoint_path", current.endpoint_path)),
             auth_style=str(values.get("auth_style", current.auth_style)),
-            search_engine=search_engine,
-            search_api_key=str(values.get("search_api_key", current.search_api_key)),
-            search_engine_id=str(values.get("search_engine_id", current.search_engine_id)),
-            mcp_transport=str(values.get("mcp_transport", current.mcp_transport)).strip().lower(),
-            mcp_command=str(values.get("mcp_command", current.mcp_command)).strip(),
-            mcp_http_url=str(values.get("mcp_http_url", current.mcp_http_url)).strip(),
-            mcp_tool_name=str(values.get("mcp_tool_name", current.mcp_tool_name)).strip() or "search",
-            mcp_headers=str(values.get("mcp_headers", current.mcp_headers)).strip(),
             configured_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
             ai_connection_status="unknown",
             ai_connection_message="",
@@ -250,19 +229,10 @@ class MathernetService:
             "ai_connection_checked_at": config.ai_connection_checked_at,
         }
 
-    def test_gateway_search(self) -> dict[str, Any]:
-        return SearchGateway(self.gateway_store.load()).test_connection()
-
     def _rebuild_agent(self, config: GatewayConfig) -> None:
-        publishers = getattr(self.agent, "approved_publishers", ())
-        synthesizer = ProviderGateway(config) if config.ai_configured else RuleBasedSynthesizer()
-        self.ai_gateway = synthesizer if isinstance(synthesizer, ProviderGateway) else None
-        self.agent = FormulaAgent(
-            self.repository,
-            SearchGateway(config).provider(),
-            synthesizer,
-            publishers,
-        )
+        synthesizer = ProviderGateway(config)
+        self.ai_gateway = synthesizer if config.ai_configured else None
+        self.agent = FormulaAgent(self.repository, synthesizer)
 
     @property
     def revision(self) -> str:
@@ -312,7 +282,13 @@ class MathernetService:
         normalized_topic = normalize_text(topic) if topic else ""
 
         items = []
-        status_counts = {"all": 0, "learning": 0, "reviewed": 0}
+        status_counts = {
+            "all": 0,
+            "new": 0,
+            "learning": 0,
+            "reviewed": 0,
+            "needs_review": 0,
+        }
         query_key = formula_key(query)
         for node in self.repository.list_formulas():
             identities = [node.id, node.name, *node.aliases]
@@ -522,11 +498,15 @@ class MathernetService:
         self._ensure_edge_version(edge, expected_updated_at)
         self.repository.delete_edge(edge.id)
         self.repository.save()
+        removed_sessions = self.deep_dive_sessions.delete_owner(
+            self._relationship_session_key(edge.id)
+        )
         return {
             "deleted": True,
             "edge_id": edge.id,
             "source_id": edge.source_id,
             "target_id": edge.target_id,
+            "deleted_deep_dive_sessions": removed_sessions,
             "revision": self.revision,
         }
 
@@ -672,7 +652,7 @@ class MathernetService:
         }
 
     def list_map_sessions(self) -> dict[str, Any]:
-        if not self.map_sessions.list():
+        if not self.map_sessions.list() and not self.map_sessions.exists:
             self.map_sessions.create(
                 name="Main map",
                 formula_ids=[node.id for node in self.repository.list_formulas()],
@@ -745,13 +725,26 @@ class MathernetService:
 
     def delete_formula(self, formula_ref: str) -> dict[str, Any]:
         node = self.resolve_formula(formula_ref)
+        incident_edges = [
+            edge
+            for edge in self.repository.document.edges
+            if edge.source_id == node.id or edge.target_id == node.id
+        ]
         removed_from = self.map_sessions.remove_formula(node.id)
         self.repository.delete_formula(node.id)
         self.repository.save()
+        removed_sessions = self.deep_dive_sessions.delete_owner(node.id)
+        for edge in incident_edges:
+            removed_sessions += self.deep_dive_sessions.delete_owner(
+                self._relationship_session_key(edge.id)
+            )
+        removed_introduction = self.formula_introductions.delete(node.id)
         return {
             "deleted": True,
             "formula_id": node.id,
             "removed_from_maps": removed_from,
+            "deleted_deep_dive_sessions": removed_sessions,
+            "deleted_introduction": removed_introduction,
             "revision": self.revision,
         }
 
@@ -1025,18 +1018,13 @@ class MathernetService:
         }
 
     def _formula_context(self, node: FormulaNode) -> dict[str, Any]:
-        ai_module = node.ai_module
         return {
             "id": node.id,
             "name": node.name,
             "latex": node.latex,
             "aliases": node.aliases,
             "topic_tags": node.topic_tags,
-            "ai_module": {
-                "summary": ai_module.summary,
-                "explanation": ai_module.explanation,
-                "derivation_steps": ai_module.derivation_steps,
-            },
+            "ai_summary": node.ai_module.summary,
         }
 
     def _relationship_context(self, edge: DependencyEdge) -> dict[str, Any]:
@@ -1140,11 +1128,9 @@ class MathernetService:
         )
         merged_source_ids.extend(source.id for source in stored_sources)
         merged_source_ids = list(dict.fromkeys(merged_source_ids))
-        supported = (
-            bool(merged_source_ids)
-            or bool(validation.get("explanation_is_reasonable"))
-            or bool(validation.get("web_supported"))
-        )
+        # "Supported" means the edge has stored evidence. A model saying the
+        # explanation is reasonable is useful, but it is not a citation.
+        supported = bool(merged_source_ids)
         return (
             merged_source_ids,
             EdgeEvidence.SUPPORTED if supported else EdgeEvidence.UNVERIFIED,
@@ -1164,7 +1150,7 @@ class MathernetService:
             url = str(item.get("url") or "").strip()
             publisher = str(item.get("publisher") or "").strip()
             excerpt = str(item.get("excerpt") or "").strip()
-            if not title or not url or not publisher:
+            if not title or not url or not publisher or not is_web_url(url):
                 continue
             source_id = f"source_{hashlib.sha256(url.encode()).hexdigest()[:16]}"
             records.append(
@@ -1190,7 +1176,7 @@ class MathernetService:
         seen = set()
         for source in [*existing, *generated]:
             url = str(source.get("url", "")).strip()
-            if not url or url in seen:
+            if not url or url in seen or not is_web_url(url):
                 continue
             seen.add(url)
             merged.append(
@@ -1291,39 +1277,19 @@ class MathernetService:
 
 def build_service(settings: Settings) -> MathernetService:
     repository = GraphRepository(settings.data_path)
-    gateway_store = GatewayStore(settings.search_cache_path.parent / "gateway.json")
+    gateway_store = GatewayStore(settings.gateway_path)
     config = gateway_store.load()
-    if not config.completed:
-        config = GatewayConfig(
-            provider="deepseek" if settings.openai_api_key else "",
-            api_key=settings.openai_api_key,
-            model=settings.openai_model,
-            search_engine="",
-            mcp_transport=settings.mcp_transport,
-            mcp_command=" ".join(settings.mcp_command),
-            mcp_http_url=settings.mcp_http_url,
-            mcp_tool_name=settings.mcp_tool_name,
-            mcp_headers=settings.mcp_headers,
-        )
-    synthesizer = ProviderGateway(config, settings.request_timeout_seconds) if config.ai_configured else RuleBasedSynthesizer()
-    agent = FormulaAgent(
-        repository,
-        SearchGateway(config, settings.request_timeout_seconds).provider(),
-        synthesizer,
-        settings.approved_publishers,
-    )
+    synthesizer = ProviderGateway(config, settings.request_timeout_seconds)
+    agent = FormulaAgent(repository, synthesizer)
+    data_dir = settings.data_path.parent
     return MathernetService(
         repository,
         agent,
         gateway_store,
-        synthesizer if isinstance(synthesizer, ProviderGateway) else None,
-        deep_dive_sessions=DeepDiveSessionStore(
-            settings.search_cache_path.parent / "deep_dive_sessions.json"
-        ),
+        synthesizer if config.ai_configured else None,
+        deep_dive_sessions=DeepDiveSessionStore(data_dir / "deep_dive_sessions.json"),
         formula_introductions=FormulaIntroductionStore(
-            settings.search_cache_path.parent / "formula_introductions.json"
+            data_dir / "formula_introductions.json"
         ),
-        map_sessions=MapSessionStore(
-            settings.search_cache_path.parent / "map_sessions.json"
-        ),
+        map_sessions=MapSessionStore(data_dir / "map_sessions.json"),
     )

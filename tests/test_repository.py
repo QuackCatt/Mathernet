@@ -39,7 +39,7 @@ class RepositoryTests(unittest.TestCase):
             latex=name,
             aliases=[alias],
             topic_tags=["algebra"],
-            ai_module=AIModule("summary", "explanation"),
+            ai_module=AIModule("summary"),
             sources=["src_one"],
         )
 
@@ -85,6 +85,30 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(edge.verification_status, VerificationStatus.USER_VERIFIED)
         self.assertEqual(edge.evidence_status, EdgeEvidence.UNVERIFIED)
         self.assertEqual(edge.sources, [])
+
+    def test_editing_edge_to_no_sources_marks_evidence_unverified(self):
+        self.add_formula("formula_a", "Prerequisite", "pre")
+        self.add_formula("formula_b", "Target", "target")
+        edge = self.repository.add_edge(
+            edge_id="edge_edit",
+            source_id="formula_a",
+            target_id="formula_b",
+            relation=EdgeRelation.PREREQUISITE,
+            rationale="Initially cited.",
+            sources=["src_one"],
+        )
+        self.assertEqual(edge.evidence_status, EdgeEvidence.SUPPORTED)
+
+        updated = self.repository.edit_edge(
+            edge.id,
+            relation=EdgeRelation.PREREQUISITE,
+            rationale="Now uncited.",
+            sources=[],
+        )
+
+        self.assertEqual(updated.sources, [])
+        self.assertEqual(updated.evidence_status, EdgeEvidence.UNVERIFIED)
+        self.repository.save()
 
     def test_delete_edge_removes_only_that_relationship(self):
         first = self.add_formula("formula_a", "Prerequisite", "pre")

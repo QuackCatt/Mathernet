@@ -49,13 +49,13 @@
     "ai_module": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["summary", "explanation", "examples", "derivation_steps", "generated_at"],
+      "required": ["summary", "generated_at"],
       "properties": {
         "summary": { "$ref": "#/$defs/non_empty_string" },
+        "generated_at": { "$ref": "#/$defs/timestamp" },
         "explanation": { "$ref": "#/$defs/non_empty_string" },
         "examples": { "$ref": "#/$defs/string_list" },
-        "derivation_steps": { "$ref": "#/$defs/string_list" },
-        "generated_at": { "$ref": "#/$defs/timestamp" }
+        "derivation_steps": { "$ref": "#/$defs/string_list" }
       }
     },
     "user_module": {

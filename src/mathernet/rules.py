@@ -260,10 +260,6 @@ def validate_graph_rules(document: GraphDocument) -> None:
             raise ValidationError(
                 f"formula {node.id} references missing sources: {sorted(missing_sources)}"
             )
-        if node.ai_module.derivation_steps and not node.sources:
-            raise ValidationError(
-                f"formula {node.id} has derivation steps but no source coverage"
-            )
         for identity in (node.name, *node.aliases):
             key = formula_key(identity)
             owner = identities.get(key)

@@ -21,7 +21,7 @@ Mathernet runs on **macOS**, **Windows 10/11**, and mainstream **Linux** desktop
 Use the following complete flow every time. Mathernet is started directly from the downloaded folder and is not installed globally.
 
 1. On GitHub, click **Code**, then click **Download ZIP**.
-2. Unzip the downloaded file. Keep the unzipped project folder together; do not move only the `mathernet` file out of it.
+2. Unzip the downloaded file. Keep the unzipped project folder together; do not move only the `mathernet` or `run_mathernet.py` file out of it.
 3. Open the unzipped project folder in Terminal or Command Prompt:
    - **macOS or Linux:** Open Terminal, type `cd ` with one space after it, drag the unzipped folder into the Terminal window, then press Enter.
    - **Windows:** Open the unzipped folder in File Explorer, type `cmd` in the File Explorer address bar, then press Enter.
@@ -35,12 +35,14 @@ Use the following complete flow every time. Mathernet is started directly from t
    - **Windows:**
 
      ```bat
-     py .\mathernet start
+     py .\run_mathernet.py start
      ```
+
+     If `py` is not available, run `python .\run_mathernet.py start` instead.
 
 5. Keep the Terminal or Command Prompt window open. Use the exact URL printed by Mathernet, such as `http://127.0.0.1:8765`, in your browser. Always use the URL shown on your screen instead of guessing the port.
 
-Keep the folder prefix shown in the command. The `./` on macOS/Linux or `.\` on Windows ensures that the program inside the current downloaded folder is used.
+Keep the folder prefix shown in the command. The `./` on macOS/Linux or `.\` on Windows ensures that the program inside the current downloaded folder is used. On macOS, if `./mathernet` reports a permission error, run `python3 mathernet start` instead.
 
 To start Mathernet again later, open the same unzipped project folder and repeat steps 3–5. There is no separate installation or update command.
 
@@ -123,6 +125,7 @@ The top-right buttons collapse the left and right panels when you want more spac
 - Personal learning data is stored in the local `data` folder.
 - API keys are stored locally and are never uploaded to GitHub.
 - When you use AI features, the relevant formula text and questions are sent to the AI provider you selected.
+- Sources shown in the app are returned by the AI provider. Mathernet does not independently verify them. If the provider can search the web itself, it may use that search.
 
 ## Important
 

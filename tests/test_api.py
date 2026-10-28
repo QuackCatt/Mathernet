@@ -9,6 +9,7 @@ from mathernet.api import (
     resolve_web_asset,
 )
 from mathernet.errors import NotFoundError
+from mathernet.gateway import GatewayStore
 from mathernet.repository import GraphRepository
 from mathernet.services import MathernetService
 from tests.test_data import synthetic_graph_payload
@@ -23,7 +24,10 @@ class ApiTests(unittest.TestCase):
         self.repository = GraphRepository(Path(self.temporary.name) / "graph.json")
         self.repository.document = self.repository.document.from_dict(synthetic_graph_payload())
         self.repository.save()
-        self.service = MathernetService(self.repository)
+        self.service = MathernetService(
+            self.repository,
+            gateway_store=GatewayStore(Path(self.temporary.name) / "gateway.json"),
+        )
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -36,7 +40,7 @@ class ApiTests(unittest.TestCase):
         formulas = handle_api_request(self.service, "GET", "/api/formulas")
         self.assertEqual(
             formulas.payload["status_counts"],
-            {"all": 3, "learning": 1, "reviewed": 1},
+            {"all": 3, "new": 1, "learning": 1, "reviewed": 1, "needs_review": 0},
         )
 
         card = handle_api_request(

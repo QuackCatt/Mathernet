@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .errors import NotFoundError, StorageError, SynthesisError, ValidationError
+from .fsutil import chmod_private
 from .rules import validate_bounded_text
 
 
@@ -79,6 +80,15 @@ class DeepDiveSessionStore:
             sessions.pop(formula_id, None)
         self._save(sessions)
 
+    def delete_owner(self, owner_id: str) -> int:
+        """Remove every saved session for one formula or relationship owner."""
+        sessions = self._load()
+        if owner_id not in sessions:
+            return 0
+        stored = sessions.pop(owner_id, [])
+        self._save(sessions)
+        return len(stored) if isinstance(stored, list) else 0
+
     def _replace(self, formula_id: str, session: dict[str, Any]) -> None:
         sessions = self._load()
         formula_sessions = sessions.get(formula_id, [])
@@ -110,9 +120,9 @@ class DeepDiveSessionStore:
         temp = self.path.with_suffix(".tmp")
         try:
             temp.write_text(payload, encoding="utf-8")
-            os.chmod(temp, 0o600)
+            chmod_private(temp)
             os.replace(temp, self.path)
-            os.chmod(self.path, 0o600)
+            chmod_private(self.path)
         except OSError as error:
             temp.unlink(missing_ok=True)
             raise StorageError(f"could not write deep-dive sessions: {error}") from error

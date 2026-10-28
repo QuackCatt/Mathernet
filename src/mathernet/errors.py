@@ -10,10 +10,6 @@ class StorageError(MathernetError):
     """Raised when local persistence cannot be completed safely."""
 
 
-class RetrievalError(MathernetError):
-    """Raised when the configured MCP retrieval service fails."""
-
-
 class SynthesisError(MathernetError):
     """Raised when the configured language model fails or returns invalid data."""
 

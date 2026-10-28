@@ -129,8 +129,6 @@ def evaluate_graph(
                     and source.excerpt
                     for source in sources
                 )
-                and all(bool(step) for step in node.ai_module.derivation_steps)
-                and (bool(node.sources) or not node.ai_module.derivation_steps)
             )
         source_cards_pass += int(card_pass)
         lookup_details.append(

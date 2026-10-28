@@ -6,6 +6,7 @@ from unittest.mock import patch
 from mathernet.api import handle_api_request
 from mathernet.agent import LearnResult
 from mathernet.errors import StorageError
+from mathernet.gateway import GatewayStore
 from mathernet.map_sessions import MapSessionStore
 from mathernet.models import AIModule, SourceRecord
 from mathernet.repository import GraphRepository
@@ -33,12 +34,16 @@ class MapSessionTests(unittest.TestCase):
             latex="x=y",
             aliases=["map formula"],
             topic_tags=["algebra"],
-            ai_module=AIModule("summary", "explanation"),
+            ai_module=AIModule("summary"),
             sources=["src_map"],
         )
         self.repository.save()
         self.map_sessions = MapSessionStore(root / "map_sessions.json")
-        self.service = MathernetService(self.repository, map_sessions=self.map_sessions)
+        self.service = MathernetService(
+            self.repository,
+            gateway_store=GatewayStore(root / "gateway.json"),
+            map_sessions=self.map_sessions,
+        )
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -93,7 +98,7 @@ class MapSessionTests(unittest.TestCase):
                     latex="r=x",
                     aliases=["rollback formula"],
                     topic_tags=["algebra"],
-                    ai_module=AIModule("summary", "explanation"),
+                    ai_module=AIModule("summary"),
                     sources=[],
                 )
                 self.repository.save()
@@ -116,6 +121,14 @@ class MapSessionTests(unittest.TestCase):
             self.service.get_map_graph(session["id"])["nodes"],
             [],
         )
+
+    def test_deleting_every_map_does_not_recreate_the_default_map(self):
+        sessions = self.service.list_map_sessions()["sessions"]
+        self.assertTrue(sessions)
+        for session in sessions:
+            self.service.delete_map_session(session["id"])
+
+        self.assertEqual(self.service.list_map_sessions()["sessions"], [])
 
 
 if __name__ == "__main__":

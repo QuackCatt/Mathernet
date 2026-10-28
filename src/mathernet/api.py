@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import mimetypes
+import os
 import re
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -14,7 +15,6 @@ from .errors import (
     ConflictError,
     MathernetError,
     NotFoundError,
-    RetrievalError,
     StorageError,
     SynthesisError,
     ValidationError,
@@ -26,6 +26,51 @@ from .services import MathernetService
 LOGGER = logging.getLogger(__name__)
 MAX_REQUEST_BODY_BYTES = 1_000_000
 DEFAULT_WEB_ROOT = Path(__file__).resolve().with_name("web")
+LOCAL_HOSTNAMES = {"127.0.0.1", "localhost", "::1"}
+
+
+def is_allowed_host(header: str | None, port: int) -> bool:
+    value = str(header or "").strip().lower()
+    if not value:
+        return False
+    if value.startswith("["):
+        end = value.find("]")
+        if end < 0:
+            return False
+        name = value[1:end]
+        remainder = value[end + 1 :]
+        if remainder:
+            if not remainder.startswith(":") or not remainder[1:].isdigit():
+                return False
+            if int(remainder[1:]) != int(port):
+                return False
+    elif ":" in value:
+        name, _, port_text = value.rpartition(":")
+        if not port_text.isdigit() or int(port_text) != int(port):
+            return False
+    else:
+        name = value
+    return name in LOCAL_HOSTNAMES
+
+
+def is_allowed_origin(origin: str | None, port: int) -> bool:
+    value = str(origin or "").strip()
+    if not value:
+        return False
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return False
+    if parsed.scheme != "http":
+        return False
+    hostname = (parsed.hostname or "").lower()
+    if hostname not in LOCAL_HOSTNAMES:
+        return False
+    try:
+        origin_port = parsed.port or 80
+    except ValueError:
+        return False
+    return int(origin_port) == int(port)
 
 
 @dataclass(slots=True)
@@ -58,12 +103,8 @@ def handle_api_request(
             return ApiResponse(200, service.save_gateway_config(body or {}))
         if path == "/api/gateway/models" and method == "POST":
             return ApiResponse(200, service.list_provider_models(body or {}))
-        if path == "/api/gateway/mcp" and method == "PATCH":
-            return ApiResponse(200, service.save_gateway_config(body or {}))
         if path == "/api/gateway/test-ai" and method == "POST":
             return ApiResponse(200, service.test_gateway_ai())
-        if path == "/api/gateway/test-search" and method == "POST":
-            return ApiResponse(200, service.test_gateway_search())
         if path == "/api/formulas" and method == "GET":
             return ApiResponse(
                 200,
@@ -354,7 +395,7 @@ def handle_api_request(
         return _error_response(404, "not_found", error)
     except ValidationError as error:
         return _error_response(400, "validation_error", error)
-    except (RetrievalError, SynthesisError) as error:
+    except SynthesisError as error:
         return _error_response(502, "upstream_error", error)
     except StorageError as error:
         return _error_response(500, "storage_error", error)
@@ -379,17 +420,15 @@ def openapi_document() -> dict[str, Any]:
         "paths": {
             "/api/health": {"get": {"summary": "Service and graph health"}},
             "/api/gateway": {
-                "get": {"summary": "Read masked AI and search gateway settings"},
-                "patch": {"summary": "Save AI and search gateway settings"},
+                "get": {"summary": "Read masked AI provider settings"},
+                "patch": {"summary": "Save AI provider settings"},
             },
             "/api/gateway/models": {
                 "post": {"summary": "List models exposed by the selected AI provider"}
             },
-            "/api/gateway/mcp": {"patch": {"summary": "Save MCP search gateway settings"}},
             "/api/gateway/test-ai": {"post": {"summary": "Test the configured AI provider"}},
-            "/api/gateway/test-search": {"post": {"summary": "Test the configured search connection"}},
             "/api/formulas": {"get": {"summary": "Search and page formula summaries"}},
-            "/api/learn": {"post": {"summary": "Create or reuse a source-backed formula card"}},
+            "/api/learn": {"post": {"summary": "Create or reuse a formula card"}},
             "/api/learn/candidates": {
                 "post": {"summary": "Find formula candidates without creating cards"}
             },
@@ -501,6 +540,9 @@ def resolve_web_asset(web_root: Path | str, request_path: str) -> Path:
 
 class MathernetHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
+    # Windows SO_REUSEADDR allows two processes to bind the same port.
+    # Disable it there so the launcher reliably moves to the next free port.
+    allow_reuse_address = os.name != "nt"
 
     def __init__(
         self,
@@ -534,6 +576,8 @@ class MathernetRequestHandler(BaseHTTPRequestHandler):
         self._dispatch(None)
 
     def _dispatch(self, body: dict[str, Any] | None) -> None:
+        if self._reject_untrusted_request():
+            return
         parsed = urlsplit(self.path)
         if self.command == "GET" and not parsed.path.startswith("/api/"):
             self._send_static(parsed.path)
@@ -542,12 +586,35 @@ class MathernetRequestHandler(BaseHTTPRequestHandler):
         self._send_response(response)
 
     def _dispatch_with_body(self) -> None:
+        if self._reject_untrusted_request():
+            return
         try:
             body = self._read_json_body()
         except MathernetError as error:
             self._send_response(_error_response(400, "validation_error", error))
             return
         self._dispatch(body)
+
+    def _reject_untrusted_request(self) -> bool:
+        port = int(self.server.server_address[1])
+        if not is_allowed_host(self.headers.get("Host"), port):
+            self._send_response(
+                ApiResponse(
+                    403,
+                    {"error": {"code": "forbidden", "message": "unexpected Host header"}},
+                )
+            )
+            return True
+        origin = self.headers.get("Origin")
+        if origin is not None and not is_allowed_origin(origin, port):
+            self._send_response(
+                ApiResponse(
+                    403,
+                    {"error": {"code": "forbidden", "message": "cross-origin request rejected"}},
+                )
+            )
+            return True
+        return False
 
     def _send_response(self, response: ApiResponse) -> None:
         payload = b"" if response.payload is None else json.dumps(
@@ -560,9 +627,8 @@ class MathernetRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, If-Match")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+        self.send_header("Referrer-Policy", "no-referrer")
         for name, value in response.headers.items():
             self.send_header(name, value)
         self.end_headers()
@@ -588,6 +654,7 @@ class MathernetRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header(
             "Content-Security-Policy",

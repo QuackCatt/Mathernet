@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import StrEnum
@@ -97,9 +98,13 @@ def _string_list(data: dict[str, Any], key: str, context: str) -> list[str]:
     return [item.strip() for item in value if item.strip()]
 
 
+def is_web_url(value: str) -> bool:
+    parsed = urlparse(str(value or "").strip())
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
 def _validate_url(value: str, context: str) -> None:
-    parsed = urlparse(value)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+    if not is_web_url(value):
         raise ValidationError(f"{context} must contain a valid http(s) URL")
 
 
@@ -134,15 +139,54 @@ class SourceRecord:
 
 
 @dataclass(slots=True)
+class SearchResult:
+    """A source returned by the AI provider. Mathernet does not verify the URL."""
+
+    title: str
+    url: str
+    publisher: str
+    excerpt: str
+    retrieved_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+    )
+
+    def to_source_record(self) -> SourceRecord:
+        digest = hashlib.sha256(self.url.encode("utf-8")).hexdigest()[:16]
+        return SourceRecord(
+            id=f"src_{digest}",
+            title=self.title,
+            url=self.url,
+            publisher=self.publisher,
+            retrieved_at=self.retrieved_at,
+            excerpt=self.excerpt,
+        )
+
+
+@dataclass(slots=True)
 class AIModule:
     summary: str
-    explanation: str
+    # Legacy fields kept for schema compatibility with cards created before the
+    # long-form generation path was removed. New cards leave them empty and the
+    # interface never displays them.
+    explanation: str = ""
     examples: list[str] = field(default_factory=list)
     derivation_steps: list[str] = field(default_factory=list)
     generated_at: str = field(default_factory=utc_now)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data: dict[str, Any] = {
+            "summary": self.summary,
+            "generated_at": self.generated_at,
+        }
+        if self.explanation:
+            data["explanation"] = self.explanation
+        if self.examples:
+            data["examples"] = list(self.examples)
+        if self.derivation_steps:
+            data["derivation_steps"] = list(self.derivation_steps)
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AIModule:
@@ -150,11 +194,15 @@ class AIModule:
         data = _ensure_object_shape(
             data,
             context,
-            ("summary", "explanation", "examples", "derivation_steps", "generated_at"),
+            ("summary", "generated_at"),
+            optional=("explanation", "examples", "derivation_steps"),
         )
+        explanation = data.get("explanation", "")
+        if not isinstance(explanation, str):
+            raise ValidationError(f"{context}.explanation must be a string")
         return cls(
             summary=_required_string(data, "summary", context),
-            explanation=_required_string(data, "explanation", context),
+            explanation=explanation.strip(),
             examples=_string_list(data, "examples", context),
             derivation_steps=_string_list(data, "derivation_steps", context),
             generated_at=_required_timestamp(data, "generated_at", context),
@@ -196,6 +244,8 @@ class FormulaNode:
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
+        data["ai_module"] = self.ai_module.to_dict()
+        data["user_module"] = self.user_module.to_dict()
         data["status"] = self.status.value
         return data
 

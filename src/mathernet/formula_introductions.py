@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .errors import StorageError, ValidationError
+from .fsutil import chmod_private
 from .rules import validate_bounded_text
 
 
@@ -20,6 +21,13 @@ class FormulaIntroductionStore:
         if not isinstance(item, dict):
             return None
         return self._validated(formula_id, item)
+
+    def delete(self, formula_id: str) -> bool:
+        values = self._load()
+        if values.pop(formula_id, None) is None:
+            return False
+        self._save(values)
+        return True
 
     def save(self, formula_id: str, introduction: str) -> dict[str, Any]:
         formula_id = validate_bounded_text(formula_id, "formula_id", max_length=200)
@@ -57,9 +65,9 @@ class FormulaIntroductionStore:
         temp = self.path.with_suffix(".tmp")
         try:
             temp.write_text(payload, encoding="utf-8")
-            os.chmod(temp, 0o600)
+            chmod_private(temp)
             os.replace(temp, self.path)
-            os.chmod(self.path, 0o600)
+            chmod_private(self.path)
         except OSError as error:
             temp.unlink(missing_ok=True)
             raise StorageError(f"could not write formula introductions: {error}") from error

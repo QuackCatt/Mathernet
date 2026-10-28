@@ -22,16 +22,6 @@ from mathernet.llm import SynthesisResult
 from mathernet.models import AIModule
 from mathernet.normalization import formula_key
 from mathernet.repository import GraphRepository
-from mathernet.retrieval import SearchResult
-
-
-class RecordingSearch:
-    def __init__(self):
-        self.queries = []
-
-    def search(self, query, limit=5):
-        self.queries.append(query)
-        return [SearchResult("Source", "https://example.edu/source", "Example University", "Excerpt")]
 
 
 class DiscoverySynthesizer:
@@ -45,7 +35,7 @@ class DiscoverySynthesizer:
         self.discovery_calls.append((query, library))
         return self.discovery
 
-    def synthesize(self, query, sources):
+    def synthesize(self, query, sources, map_context=None):
         self.synthesis_calls.append((query, sources))
         if self.result is None:
             raise AssertionError("synthesis must not run")
@@ -67,7 +57,7 @@ class AgentSkillTests(unittest.TestCase):
             latex="x=1",
             aliases=aliases,
             topic_tags=["algebra"],
-            ai_module=AIModule("summary", "explanation"),
+            ai_module=AIModule("summary"),
             sources=[],
         )
 
@@ -232,14 +222,12 @@ class AgentSkillTests(unittest.TestCase):
                 confidence=0.99,
             )
         )
-        search = RecordingSearch()
-        agent = FormulaAgent(self.repository, search, synthesizer, ("Example University",))
+        agent = FormulaAgent(self.repository, synthesizer)
 
         result = agent.learn("the formula described by the learner")
 
         self.assertFalse(result.created)
         self.assertEqual(result.node.id, existing.id)
-        self.assertEqual(search.queries, [])
         self.assertEqual(synthesizer.synthesis_calls, [])
 
     def test_post_synthesis_match_never_creates_a_duplicate(self):
@@ -251,15 +239,10 @@ class AgentSkillTests(unittest.TestCase):
                 latex="x=1",
                 aliases=["alternate name"],
                 topic_tags=["algebra"],
-                ai_module=AIModule("summary", "explanation"),
+                ai_module=AIModule("summary"),
             ),
         )
-        agent = FormulaAgent(
-            self.repository,
-            RecordingSearch(),
-            synthesizer,
-            ("Example University",),
-        )
+        agent = FormulaAgent(self.repository, synthesizer)
 
         result = agent.learn("a description that resolves later")
 
@@ -279,11 +262,10 @@ class AgentSkillTests(unittest.TestCase):
                 latex="x=1",
                 aliases=["abc formula"],
                 topic_tags=["algebra"],
-                ai_module=AIModule("summary", "explanation"),
+                ai_module=AIModule("summary"),
             ),
         )
-        search = RecordingSearch()
-        agent = FormulaAgent(self.repository, search, synthesizer, ("Example University",))
+        agent = FormulaAgent(self.repository, synthesizer)
 
         result = agent.learn("formula for the roots of ax^2+bx+c")
 
@@ -291,28 +273,22 @@ class AgentSkillTests(unittest.TestCase):
         self.assertEqual(result.node.id, stable_id("formula", formula_key("Quadratic formula")))
         self.assertIn("formula for the roots of ax^2+bx+c", result.node.aliases)
         self.assertIn("roots of a quadratic", result.node.aliases)
-        self.assertEqual(search.queries, ["Quadratic formula"])
 
     def test_discovery_failure_falls_back_to_the_original_query(self):
         class FailingDiscovery:
             def discover_formula(self, query, library):
                 raise SynthesisError("temporary discovery failure")
 
-            def synthesize(self, query, sources):
+            def synthesize(self, query, sources, map_context=None):
                 return SynthesisResult(
                     name=query,
                     latex="x=1",
                     aliases=[],
                     topic_tags=["algebra"],
-                    ai_module=AIModule("summary", "explanation"),
+                    ai_module=AIModule("summary"),
                 )
 
-        agent = FormulaAgent(
-            self.repository,
-            RecordingSearch(),
-            FailingDiscovery(),
-            ("Example University",),
-        )
+        agent = FormulaAgent(self.repository, FailingDiscovery())
         result = agent.learn("fallback formula")
         self.assertTrue(result.created)
         self.assertEqual(result.node.name, "fallback formula")

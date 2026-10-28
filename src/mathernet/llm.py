@@ -1,16 +1,11 @@
 from __future__ import annotations
 
 import json
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from .agent_skills import AI_SAFETY_POLICY
 from .errors import SynthesisError
-from .http_client import open_url
-from .models import AIModule, EdgeRelation
-from .retrieval import SearchResult
+from .models import AIModule, EdgeRelation, SearchResult
 
 
 @dataclass(slots=True)
@@ -43,179 +38,6 @@ class Synthesizer(Protocol):
     ) -> SynthesisResult: ...
 
 
-class RuleBasedSynthesizer:
-    """Offline-safe synthesizer that never invents relations or derivations."""
-
-    def synthesize(
-        self,
-        query: str,
-        sources: list[SearchResult],
-        map_context: dict[str, Any] | None = None,
-    ) -> SynthesisResult:
-        if not sources:
-            raise SynthesisError("at least one reliable source is required")
-        source_titles = ", ".join(source.title for source in sources)
-        return SynthesisResult(
-            name=query,
-            latex=query if "=" in query else r"\text{" + query.replace("}", "") + "}",
-            aliases=[],
-            topic_tags=["mathematics"],
-            ai_module=AIModule(
-                summary=f"Source-backed overview of {query}.",
-                explanation=(
-                    f"Mathernet found {len(sources)} reliable source(s): {source_titles}. "
-                    "This offline record preserves their excerpts without adding an unsupported derivation."
-                ),
-                examples=[],
-                derivation_steps=[],
-            ),
-            sources=list(sources),
-            dependencies=[],
-        )
-
-
-class OpenAIResponsesSynthesizer:
-    def __init__(
-        self,
-        api_key: str,
-        model: str = "gpt-5-mini",
-        timeout_seconds: int = 60,
-        endpoint: str = "https://api.openai.com/v1/responses",
-    ):
-        if not api_key:
-            raise SynthesisError("OPENAI_API_KEY is not configured")
-        self.api_key = api_key
-        self.model = model
-        self.timeout_seconds = timeout_seconds
-        self.endpoint = endpoint
-
-    def synthesize(
-        self,
-        query: str,
-        sources: list[SearchResult],
-        map_context: dict[str, Any] | None = None,
-    ) -> SynthesisResult:
-        source_payload = [
-            {
-                "title": source.title,
-                "url": source.url,
-                "publisher": source.publisher,
-                "excerpt": source.excerpt,
-            }
-            for source in sources
-        ]
-        system_prompt = (
-            f"{AI_SAFETY_POLICY}\n"
-            "You are Mathernet, a study-only formula learning assistant. "
-            "Use only supplied source material for factual claims. Never invent a formula, derivation, source, or citation. "
-            "Compare the request with every active-map formula and preserve every meaningful mathematical relationship. "
-            "Do not solve exams or homework. Return only valid JSON matching the requested schema."
-        )
-        user_prompt = json.dumps(
-            {
-                "formula_request": query,
-                "sources": source_payload,
-                "active_map": map_context or {},
-                "instructions": [
-                    "Create a plain-language formula card.",
-                    "Store canonical mathematics in latex.",
-                    "Keep every dependency directed from the related formula to the requested formula.",
-                    "Use relation values: prerequisite, derivation_basis, special_case, generalization, equivalent_form.",
-                ],
-            },
-            ensure_ascii=False,
-        )
-        schema = {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["name", "latex", "aliases", "topic_tags", "ai_module", "dependencies"],
-            "properties": {
-                "name": {"type": "string"},
-                "latex": {"type": "string"},
-                "aliases": {"type": "array", "items": {"type": "string"}},
-                "topic_tags": {"type": "array", "items": {"type": "string"}},
-                "ai_module": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "required": ["summary", "explanation", "examples", "derivation_steps"],
-                    "properties": {
-                        "summary": {"type": "string"},
-                        "explanation": {"type": "string"},
-                        "examples": {"type": "array", "items": {"type": "string"}},
-                        "derivation_steps": {"type": "array", "items": {"type": "string"}},
-                    },
-                },
-                "dependencies": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": False,
-                        "required": [
-                            "prerequisite_name",
-                            "local_formula_id",
-                            "relation",
-                            "rationale",
-                            "confidence",
-                            "source_urls",
-                        ],
-                        "properties": {
-                            "prerequisite_name": {"type": "string"},
-                            "local_formula_id": {"type": "string"},
-                            "relation": {"type": "string", "enum": [item.value for item in EdgeRelation]},
-                            "rationale": {"type": "string"},
-                            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-                            "source_urls": {"type": "array", "items": {"type": "string"}},
-                        },
-                    },
-                },
-            },
-        }
-        request_body = {
-            "model": self.model,
-            "instructions": system_prompt,
-            "input": user_prompt,
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": "mathernet_formula_card",
-                    "strict": True,
-                    "schema": schema,
-                }
-            },
-        }
-        request = urllib.request.Request(
-            self.endpoint,
-            data=json.dumps(request_body).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-        try:
-            with open_url(request, timeout=self.timeout_seconds) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except (urllib.error.URLError, OSError, json.JSONDecodeError) as error:
-            raise SynthesisError(f"language model request failed: {error}") from error
-        return parse_synthesis_result(extract_response_text(payload))
-
-
-def extract_response_text(payload: dict[str, Any]) -> str:
-    if isinstance(payload.get("output_text"), str) and payload["output_text"]:
-        return payload["output_text"]
-    chunks: list[str] = []
-    for item in payload.get("output", []):
-        if not isinstance(item, dict):
-            continue
-        content = item.get("content", [])
-        for part in content if isinstance(content, list) else []:
-            if isinstance(part, dict) and isinstance(part.get("text"), str):
-                chunks.append(part["text"])
-    if not chunks:
-        raise SynthesisError("language model response did not contain output text")
-    return "".join(chunks)
-
-
 def parse_synthesis_result(raw: str) -> SynthesisResult:
     try:
         data = json.loads(raw)
@@ -224,6 +46,13 @@ def parse_synthesis_result(raw: str) -> SynthesisResult:
     data = _normalize_synthesis_payload(data)
     try:
         ai_data = data["ai_module"]
+        summary = (
+            str(ai_data.get("summary") or "").strip()
+            if isinstance(ai_data, dict)
+            else str(ai_data or "").strip()
+        )
+        if not summary:
+            raise KeyError("ai_module.summary")
         dependencies = [
             SynthesisDependency(
                 prerequisite_name=str(
@@ -255,12 +84,7 @@ def parse_synthesis_result(raw: str) -> SynthesisResult:
             latex=str(data["latex"]),
             aliases=_string_values(data.get("aliases", [])),
             topic_tags=_string_values(data.get("topic_tags", [])),
-            ai_module=AIModule(
-                summary=str(ai_data["summary"]),
-                explanation=str(ai_data["explanation"]),
-                examples=_string_values(ai_data.get("examples", [])),
-                derivation_steps=_string_values(ai_data.get("derivation_steps", [])),
-            ),
+            ai_module=AIModule(summary=summary),
             sources=sources,
             dependencies=dependencies,
         )
@@ -304,8 +128,6 @@ def _normalize_synthesis_payload(data: Any) -> dict[str, Any]:
         "topicTags": "topic_tags",
         "ai_module": "ai_module",
         "aiModule": "ai_module",
-        "derivation_steps": "derivation_steps",
-        "derivationSteps": "derivation_steps",
         "source_urls": "source_urls",
         "sourceUrls": "source_urls",
         "prerequisite_name": "prerequisite_name",
@@ -317,21 +139,16 @@ def _normalize_synthesis_payload(data: Any) -> dict[str, Any]:
     }
     normalized = {aliases.get(key, key): value for key, value in current.items()}
     if "ai_module" not in normalized:
-        if isinstance(normalized.get("aiModule"), dict):
-            normalized["ai_module"] = normalized["aiModule"]
-        elif "summary" in normalized or "explanation" in normalized:
+        if "summary" in normalized or "explanation" in normalized:
             normalized["ai_module"] = {
-                "summary": normalized.get("summary", ""),
-                "explanation": normalized.get("explanation", ""),
-                "examples": normalized.get("examples", []),
-                "derivation_steps": normalized.get("derivation_steps", normalized.get("derivationSteps", [])),
+                "summary": normalized.get("summary") or normalized.get("explanation", ""),
             }
     ai_module = normalized.get("ai_module")
     if isinstance(ai_module, str):
-        normalized["ai_module"] = {"summary": ai_module, "explanation": ai_module}
+        normalized["ai_module"] = {"summary": ai_module}
     elif isinstance(ai_module, dict):
         normalized["ai_module"] = {
-            aliases.get(key, key): value for key, value in ai_module.items()
+            "summary": ai_module.get("summary") or ai_module.get("explanation", ""),
         }
 
     dependencies = normalized.get("dependencies", [])

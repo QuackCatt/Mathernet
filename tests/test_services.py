@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from mathernet.errors import ConflictError
+from mathernet.gateway import GatewayStore
 from mathernet.models import AIModule, SourceRecord
 from mathernet.repository import GraphRepository
 from mathernet.services import MathernetService
@@ -28,7 +29,7 @@ class ServiceTests(unittest.TestCase):
             latex="a=b",
             aliases=["first"],
             topic_tags=["algebra"],
-            ai_module=AIModule("AI summary", "AI explanation"),
+            ai_module=AIModule("AI summary"),
             sources=["src_service"],
         )
         self.second = self.repository.add_formula(
@@ -37,11 +38,14 @@ class ServiceTests(unittest.TestCase):
             latex="c=d",
             aliases=["second"],
             topic_tags=["algebra"],
-            ai_module=AIModule("AI summary", "AI explanation"),
+            ai_module=AIModule("AI summary"),
             sources=["src_service"],
         )
         self.repository.save()
-        self.service = MathernetService(self.repository)
+        self.service = MathernetService(
+            self.repository,
+            gateway_store=GatewayStore(Path(self.temporary.name) / "gateway.json"),
+        )
 
     def tearDown(self):
         self.temporary.cleanup()

@@ -27,7 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         _initialize()
         return start_api(Settings.from_env())
-    except MathernetError as error:
+    except (MathernetError, OSError, ValueError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 2
 
@@ -45,12 +45,19 @@ def start_api(settings: Settings) -> int:
     service = build_service(settings)
     server = None
     last_error = None
+    # WSAEADDRINUSE / WSAEACCES on Windows, where socket errors may not map
+    # onto the POSIX errno values used by macOS and Linux.
+    busy_windows_errors = {10048, 10013}
     for port in range(8765, 8785):
         try:
             server = create_server(service, host="127.0.0.1", port=port)
             break
         except OSError as error:
-            if error.errno not in {errno.EADDRINUSE, errno.EACCES}:
+            busy = (
+                error.errno in {errno.EADDRINUSE, errno.EACCES}
+                or getattr(error, "winerror", None) in busy_windows_errors
+            )
+            if not busy:
                 raise MathernetError(f"could not start Mathernet: {error}") from error
             last_error = error
     if server is None:
@@ -62,7 +69,6 @@ def start_api(settings: Settings) -> int:
     display_host = "127.0.0.1" if address in {"0.0.0.0", "::"} else address
     print("Mathernet is running.")
     print(f"URL: http://{display_host}:{actual_port}")
-    print(f"Port: {actual_port}")
     print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()

@@ -8,19 +8,19 @@ from .agent_skills import (
     FormulaCandidate,
     FormulaDiscovery,
 )
-from .errors import NotFoundError, RefusalError, SynthesisError, ValidationError
+from .errors import NotFoundError, SynthesisError, ValidationError
 from .llm import Synthesizer, SynthesisDependency, SynthesisResult
 from .models import (
     DependencyEdge,
     EdgeEvidence,
     EdgeRelation,
     FormulaNode,
-    RefusalReason,
     SourceRecord,
+    SearchResult,
+    is_web_url,
 )
 from .normalization import formula_key
 from .repository import GraphRepository
-from .retrieval import SearchProvider, SearchResult, filter_approved_sources
 from .safety import enforce_request_safety
 
 
@@ -32,17 +32,9 @@ class LearnResult:
 
 
 class FormulaAgent:
-    def __init__(
-        self,
-        repository: GraphRepository,
-        search_provider: SearchProvider | None,
-        synthesizer: Synthesizer,
-        approved_publishers: tuple[str, ...],
-    ):
+    def __init__(self, repository: GraphRepository, synthesizer: Synthesizer):
         self.repository = repository
-        self.search_provider = search_provider
         self.synthesizer = synthesizer
-        self.approved_publishers = approved_publishers
 
     def lookup(self, query: str) -> FormulaNode | None:
         enforce_request_safety(query)
@@ -123,33 +115,17 @@ class FormulaAgent:
         if discovered is not None:
             return LearnResult(node=discovered, created=False)
 
-        direct_mode = self.search_provider is None
-        if direct_mode:
-            raw_results = []
-        else:
-            if hasattr(self.search_provider, "__enter__"):
-                with self.search_provider as provider:
-                    raw_results = provider.search(canonical_query, limit=5)
-            else:
-                raw_results = self.search_provider.search(canonical_query, limit=5)
-        results = filter_approved_sources(raw_results, self.approved_publishers)
-        if not direct_mode and not results:
-            raise RefusalError(
-                "Mathernet found no reliable approved source for this formula, so it will not invent an explanation.",
-                RefusalReason.NO_RELIABLE_SOURCE.value,
-            )
-
         synthesis_context = dict(map_context) if map_context else {}
         if selected_candidate is not None:
             synthesis_context["selected_candidate"] = selected_candidate.to_dict()
         if synthesis_context:
             synthesis = self.synthesizer.synthesize(
                 canonical_query,
-                results,
+                [],
                 synthesis_context,
             )
         else:
-            synthesis = self.synthesizer.synthesize(canonical_query, results)
+            synthesis = self.synthesizer.synthesize(canonical_query, [])
         if selected_candidate is not None:
             synthesis.name = selected_candidate.canonical_name
             synthesis.latex = selected_candidate.latex
@@ -172,10 +148,8 @@ class FormulaAgent:
             map_context,
         )
 
-        citation_results = synthesis.sources if direct_mode else results
-        if direct_mode and not citation_results:
-            synthesis.ai_module.derivation_steps = []
-        source_records = self._validate_and_store_sources(synthesis, citation_results)
+        citation_results = synthesis.sources
+        source_records = self._store_model_sources(citation_results)
         formula_id = stable_id("formula", formula_key(synthesis.name or canonical_query))
         node = self.repository.add_formula(
             formula_id=formula_id,
@@ -309,27 +283,18 @@ class FormulaAgent:
                 return match
         return None
 
-    def _validate_and_store_sources(
-        self, synthesis: SynthesisResult, results: list[SearchResult]
+    def _store_model_sources(
+        self, results: list[SearchResult]
     ) -> list[SourceRecord]:
-        if not results:
-            for dependency in synthesis.dependencies:
-                dependency.source_urls = []
-            return []
-        allowed_urls = {result.url for result in results}
-        cited_urls = {
-            url
-            for dependency in synthesis.dependencies
-            for url in dependency.source_urls
-        }
-        unsupported = cited_urls - allowed_urls
-        if unsupported:
-            raise SynthesisError(
-                "language model cited URLs that were not returned by retrieval: "
-                + ", ".join(sorted(unsupported))
-            )
-        records = [result.to_source_record() for result in results]
-        return [self.repository.add_or_update_source(record) for record in records]
+        records: list[SourceRecord] = []
+        seen: set[str] = set()
+        for result in results:
+            url = str(result.url or "").strip()
+            if not url or url in seen or not is_web_url(url):
+                continue
+            seen.add(url)
+            records.append(self.repository.add_or_update_source(result.to_source_record()))
+        return records
 
     def _resolve_dependencies(
         self,

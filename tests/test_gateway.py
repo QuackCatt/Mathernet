@@ -32,16 +32,13 @@ class GatewayTests(unittest.TestCase):
             {
                 "provider": "deepseek",
                 "api_key": "synthetic-test-token",
-                "search_engine": "google",
-                "search_api_key": "synthetic-search-token",
-                "search_engine_id": "engine-id",
             },
         )
         self.assertEqual(response.status, 200)
         self.assertEqual(response.payload["provider"], "deepseek")
         self.assertNotIn("synthetic-test-token", json.dumps(response.payload))
-        self.assertNotIn("synthetic-search-token", json.dumps(response.payload))
         self.assertTrue(response.payload["api_key_hint"].startswith("syn"))
+        self.assertNotIn("search_engines", response.payload)
 
         stored = json.loads((Path(self.temporary.name) / "gateway.json").read_text())
         self.assertEqual(stored["api_key"], "synthetic-test-token")
@@ -51,17 +48,37 @@ class GatewayTests(unittest.TestCase):
             GatewayConfig(
                 provider="deepseek",
                 api_key="synthetic-existing-token",
-                search_engine="baidu",
             )
         )
         response = handle_api_request(
             self.service,
             "PATCH",
             "/api/gateway",
-            {"provider": "deepseek", "api_key": "", "search_engine": "baidu"},
+            {"provider": "deepseek", "api_key": ""},
         )
         self.assertEqual(response.payload["api_key_hint"], "syn…en")
         self.assertEqual(self.store.load().api_key, "synthetic-existing-token")
+
+    def test_switching_provider_without_a_new_key_clears_the_old_key(self):
+        self.store.save(
+            GatewayConfig(
+                provider="openrouter",
+                api_key="synthetic-openrouter-token",
+                model="openai/gpt-4o-mini",
+            )
+        )
+        response = handle_api_request(
+            self.service,
+            "PATCH",
+            "/api/gateway",
+            {"provider": "deepseek", "api_key": ""},
+        )
+
+        config = self.store.load()
+        self.assertEqual(config.provider, "deepseek")
+        self.assertEqual(config.api_key, "")
+        self.assertFalse(config.ai_configured)
+        self.assertEqual(response.payload["api_key_hint"], "")
 
     def test_failed_connection_test_persists_check_settings(self):
         response = handle_api_request(
@@ -126,32 +143,21 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(config.ai_connection_status, "connected")
         self.assertIn("previous successful connection", config.ai_connection_message)
 
-    def test_openapi_exposes_gateway_routes(self):
+    def test_openapi_exposes_only_the_ai_gateway_routes(self):
         response = handle_api_request(self.service, "GET", "/api/openapi.json")
         self.assertIn("/api/gateway", response.payload["paths"])
         self.assertIn("/api/gateway/models", response.payload["paths"])
-        self.assertIn("/api/gateway/mcp", response.payload["paths"])
+        self.assertNotIn("/api/gateway/mcp", response.payload["paths"])
+        self.assertNotIn("/api/gateway/test-search", response.payload["paths"])
 
-    def test_mcp_route_accepts_command_http_url_and_headers_json(self):
+    def test_mcp_route_is_no_longer_available(self):
         response = handle_api_request(
             self.service,
             "PATCH",
             "/api/gateway/mcp",
-            {
-                "transport": "http",
-                "command": "",
-                "http_url": "https://search.example/mcp",
-                "tool_name": "web_search",
-                "headers_json": '{"Authorization":"Bearer local-token"}',
-            },
+            {"transport": "http"},
         )
-        self.assertEqual(response.status, 200)
-        config = self.store.load()
-        self.assertEqual(config.mcp_transport, "http")
-        self.assertEqual(config.mcp_http_url, "https://search.example/mcp")
-        self.assertEqual(config.mcp_tool_name, "web_search")
-        self.assertEqual(config.mcp_headers, '{"Authorization":"Bearer local-token"}')
-        self.assertNotIn("local-token", json.dumps(response.payload))
+        self.assertEqual(response.status, 404)
 
     def test_structured_provider_requests_include_the_required_schema(self):
         captured_request = {}

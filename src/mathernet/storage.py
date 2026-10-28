@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .errors import StorageError, ValidationError
+from .fsutil import chmod_private
 from .models import GraphDocument
 from .rules import validate_graph_rules
 
@@ -54,6 +55,7 @@ class JsonGraphStore:
                 stream.write(payload)
                 stream.flush()
                 os.fsync(stream.fileno())
+            chmod_private(temp_path)
             os.replace(temp_path, self.path)
         except OSError as error:
             if temp_path is not None:

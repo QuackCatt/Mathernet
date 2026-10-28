@@ -46,11 +46,7 @@ class EvaluationTests(unittest.TestCase):
                 latex=rf"\text{{{name}}}",
                 aliases=sorted(name_aliases),
                 topic_tags=["mathematics"],
-                ai_module=AIModule(
-                    "summary",
-                    "explanation",
-                    derivation_steps=["Source-backed derivation step"],
-                ),
+                ai_module=AIModule("summary"),
                 user_module=UserModule(updated_at="2026-10-12T00:00:00+00:00"),
                 status=FormulaStatus.NEW,
                 sources=["src_gold"],

@@ -108,6 +108,7 @@ class GraphRepository:
             topic_tags=topic_tags,
             sources=sources,
         )
+        self._require_sources(sources)
         if self.find_formula(name) or any(self.find_formula(alias) for alias in aliases):
             raise ValidationError("a formula with the same name or alias already exists")
         if any(node.id == formula_id for node in self.document.nodes):
@@ -187,6 +188,7 @@ class GraphRepository:
             sources=sources,
             allow_empty_rationale=manual,
         )
+        self._require_sources(sources)
         if any(edge.id == edge_id for edge in self.document.edges):
             raise ValidationError(f"edge ID {edge_id} already exists")
         self.get_formula(source_id)
@@ -284,14 +286,37 @@ class GraphRepository:
             sources=sources,
             allow_empty_rationale=edge.created_by == "manual",
         )
+        self._require_sources(sources)
         validate_edge_transition(edge.verification_status, VerificationStatus.USER_EDITED)
+        previous = (
+            edge.relation,
+            edge.rationale,
+            list(edge.sources),
+            edge.evidence_status,
+            edge.verification_status,
+            edge.updated_at,
+        )
         now = utc_now()
         edge.relation = relation
         edge.rationale = normalize_text(rationale)
         edge.sources = list(dict.fromkeys(sources))
+        edge.evidence_status = (
+            EdgeEvidence.SUPPORTED if edge.sources else EdgeEvidence.UNVERIFIED
+        )
         edge.verification_status = VerificationStatus.USER_EDITED
         edge.updated_at = now
-        self._validate_references()
+        try:
+            self._validate_references()
+        except ValidationError:
+            (
+                edge.relation,
+                edge.rationale,
+                edge.sources,
+                edge.evidence_status,
+                edge.verification_status,
+                edge.updated_at,
+            ) = previous
+            raise
         return edge
 
     def neighbours(self, formula_id: str) -> tuple[list[DependencyEdge], list[DependencyEdge]]:
@@ -299,6 +324,12 @@ class GraphRepository:
         incoming = [edge for edge in self.document.edges if edge.target_id == formula_id]
         outgoing = [edge for edge in self.document.edges if edge.source_id == formula_id]
         return incoming, outgoing
+
+    def _require_sources(self, sources: list[str]) -> None:
+        known = {source.id for source in self.document.sources}
+        missing = set(sources) - known
+        if missing:
+            raise ValidationError(f"missing source IDs: {sorted(missing)}")
 
     def _validate_references(self) -> None:
         validate_graph_rules(self.document)

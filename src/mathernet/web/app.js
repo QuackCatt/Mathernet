@@ -442,7 +442,7 @@ async function api(path, options = {}) {
     response = await fetch(path, { ...options, headers });
   } catch {
     throw new ApiError(
-      "Mathernet cannot reach the local service. Start it again with scripts/mathernet start.",
+      "Mathernet cannot reach the local service. Restart it from the downloaded folder and reload this page.",
       "network_error",
     );
   }
@@ -2042,7 +2042,7 @@ async function deleteSelectedFormula() {
   const card = state.selectedCard;
   if (!card) return;
   const name = card.formula.name;
-  const confirmed = window.confirm(`Delete “${name}” from Mathernet? This removes the formula card and its relationships from every mind map.`);
+  const confirmed = window.confirm(`Delete “${name}” from Mathernet? This removes the formula card, its relationships, its saved deep dives, and its cached introduction.`);
   if (!confirmed) return;
   setBusy(elements.deleteFormula, true, "");
   try {
