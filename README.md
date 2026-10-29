@@ -9,7 +9,7 @@ Everything is managed in a web interface. You only use Terminal or Command Promp
 ## System Requirements
 
 - Python **3.11 or newer**.
-- A modern desktop browser: Safari, Chrome, Edge, or Firefox.
+- A current desktop browser (for example Safari, Chrome, Edge, or Firefox).
 - One AI API key from either **OpenRouter** or **DeepSeek**.
 - Internet access is required only when using AI features.
 - Node.js, Docker, a database, and programming knowledge are not required.
@@ -42,7 +42,7 @@ Use the following complete flow every time. Mathernet is started directly from t
 
 5. Keep the Terminal or Command Prompt window open. Use the exact URL printed by Mathernet, such as `http://127.0.0.1:8765`, in your browser. Always use the URL shown on your screen instead of guessing the port.
 
-Keep the folder prefix shown in the command. The `./` on macOS/Linux or `.\` on Windows ensures that the program inside the current downloaded folder is used. On macOS, if `./mathernet` reports a permission error, run `python3 mathernet start` instead.
+Keep the folder prefix shown in the command. The `./` on macOS/Linux or `.\` on Windows ensures that the program inside the current downloaded folder is used. On macOS or Linux, if `./mathernet` reports a permission error, run `python3 mathernet start` instead.
 
 To start Mathernet again later, open the same unzipped project folder and repeat steps 3–5. There is no separate installation or update command.
 
@@ -59,7 +59,7 @@ The AI provider settings open automatically the first time you use Mathernet.
 
 Mathernet tests the connection automatically. When it is ready, the status light turns green and the settings window closes.
 
-You only need to do this once. To change providers or keys later, click the **Settings** button in Mathernet.
+You only need to do this once. To change providers or keys later, click the **Settings** button in Mathernet. When you switch providers, enter the new provider's API key; Mathernet does not reuse the old one.
 
 ## Get an API Key
 
@@ -107,13 +107,15 @@ Select a formula to open its details:
 - **Explore deeper** opens a longer explanation with useful context, stories, applications, and available sources when they can be found.
 - **Learning** contains the study status and your personal study note.
 
+To remove a formula, use the trash button on its card. This removes the card from every mind map and also deletes its saved deep dives, its saved introduction, and its relationships.
+
 You can continue asking questions in the conversation box at the bottom of **Explore deeper**.
 
 ### Work with the Map
 
 - Drag formulas to arrange the map.
 - Drag two formulas close together and release to create a relationship.
-- Drag the red scissors onto a relationship line to remove it.
+- Drag the red scissors onto a relationship line to remove it. Its saved relationship deep dive is removed too.
 - Drag the blue magnifier onto a relationship line to explore why the formulas connect.
 - Click an empty part of the map to return to the full map view.
 
@@ -124,8 +126,8 @@ The top-right buttons collapse the left and right panels when you want more spac
 - Formula cards, notes, mind maps, generated conversations, and API settings stay on your computer.
 - Personal learning data is stored in the local `data` folder.
 - API keys are stored locally and are never uploaded to GitHub.
-- When you use AI features, the relevant formula text and questions are sent to the AI provider you selected.
-- Sources shown in the app are returned by the AI provider. Mathernet does not independently verify them. If the provider can search the web itself, it may use that search.
+- When you use AI features, the relevant formula text and questions are sent to the AI provider you selected. Your API key is sent only to that provider.
+- Sources shown under **Explore deeper** are returned by the AI provider. Mathernet does not independently verify them. If the provider can search the web itself, it may use that search.
 
 ## Important
 
