@@ -81,6 +81,14 @@ section .sub{margin-top:var(--space-2);color:var(--ink-soft);max-width:64ch}
 .step p{font-size:.95rem;color:var(--ink-soft)}
 .step code{font-size:.85em;background:var(--accent-soft);padding:.1em .35em}
 
+/* run instructions */
+.cmdlist{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-3)}
+.cmdlist li{display:flex;gap:var(--space-3);align-items:baseline;border-top:1px solid var(--line);padding-top:var(--space-3)}
+.cmdlist .n{font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--accent)}
+.cmdlist div{font-size:.95rem;color:var(--ink-soft)}
+.cmdlist b{color:var(--ink)}
+.cmdlist code{font-size:.85em;background:var(--accent-soft);padding:.1em .35em}
+
 /* feature grid */
 .features{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line)}
 .feature{background:var(--card);padding:var(--space-4) var(--space-3)}
@@ -144,6 +152,7 @@ footer a{color:var(--ink-soft)}
       <a href="#features">Features</a>
       <a href="#library">Library</a>
       <a href="#evaluation">Evaluation</a>
+      <a href="#run">Run it</a>
       <a class="btn" href="https://github.com/QuackCatt/Mathernet">GitHub</a>
     </nav>
   </div>
@@ -276,6 +285,21 @@ footer a{color:var(--ink-soft)}
         <div class="tags"><span class="tag">numerical analysis</span><span class="tag">prerequisite chain</span></div>
       </article>
     </div>
+  </div>
+</section>
+
+<section id="run" style="padding-top:0">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Run it yourself in three commands</h2>
+      <p class="sub">No installation beyond Python — Mathernet ships with zero third-party runtime dependencies.</p>
+    </div>
+    <ol class="cmdlist">
+      <li><span class="n">1</span><div><b>Clone</b> — <code>git clone https://github.com/QuackCatt/Mathernet</code> (or download the ZIP). Requires Python 3.11 or newer.</div></li>
+      <li><span class="n">2</span><div><b>Start</b> — Windows: <code>py .\run_mathernet.py start</code>; macOS / Linux: <code>./mathernet start</code>. The app opens a local server at <code>http://127.0.0.1:8765</code> and prints the URL to visit.</div></li>
+      <li><span class="n">3</span><div><b>Connect a model</b> — open Settings, choose OpenRouter or DeepSeek, paste your API key. Then describe any formula and watch it appear on your map.</div></li>
+    </ol>
+    <p class="sub" style="margin-top:var(--space-3)">Check the build any time with <code>PYTHONPATH=src python -m unittest discover -s tests</code> (129 tests) and re-score the shipped graph with <code>PYTHONPATH=src python scripts/evaluate_real.py</code>.</p>
   </div>
 </section>
 
