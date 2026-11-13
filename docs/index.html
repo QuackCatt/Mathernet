@@ -3,134 +3,212 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mathernet — AI-assisted formula knowledge graphs for self-learners</title>
-<meta name="description" content="Mathernet is a local-first study tool that turns plain-language descriptions of mathematical formulas into an interactive, source-traceable knowledge graph. HKU AILT9019 team project.">
+<title>Mathernet — learn formulas as a map, not a list</title>
+<meta name="description" content="Mathernet is a local, AI-assisted study tool that turns plain-language descriptions of formulas into an interactive knowledge map with sources you can inspect. HKU AILT9019 team project.">
+<meta name="color-scheme" content="light dark">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Crimson+Pro:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous" onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});"></script>
 <style>
 :root{
-  --ink:#181A20;
-  --ink-soft:#4A4E5A;
-  --ink-faint:#7A7F8C;
-  --paper:#FAFAF7;
-  --card:#FFFFFF;
-  --line:#E3E2DC;
-  --accent:#3B4CCA;
-  --accent-soft:#EAEDFB;
-  --serif:"Crimson Pro",Georgia,serif;
-  --sans:"Atkinson Hyperlegible","Helvetica Neue",Arial,sans-serif;
-  --space-1:.5rem;--space-2:1rem;--space-3:1.5rem;--space-4:2rem;--space-6:3rem;--space-8:4.5rem;--space-12:7rem;
+  --bg:#F6F4EE;
+  --bg-2:#EFECE3;
+  --surface:#FFFFFF;
+  --ink:#15171C;
+  --ink-2:#464B58;
+  --ink-3:#6B7080;
+  --line:#DCD8CB;
+  --accent:#2F46C8;
+  --accent-ink:#FFFFFF;
+  --accent-soft:#E6EAFB;
+  --warn:#8A5A00;
+  --warn-soft:#FBF0D6;
+  --edge:#8B91A6;
+  --dot:#D9D5C8;
+  --serif:"Newsreader",Georgia,"Times New Roman",serif;
+  --sans:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
   --max:1120px;
+  --r:10px;
 }
+:root:not([data-theme="light"]){
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#101218;
+    --bg-2:#161922;
+    --surface:#1B1F2A;
+    --ink:#ECEDF2;
+    --ink-2:#B4B8C6;
+    --ink-3:#8C91A3;
+    --line:#2B3040;
+    --accent:#8FA0FF;
+    --accent-ink:#0F1220;
+    --accent-soft:#232A4D;
+    --warn:#F0C168;
+    --warn-soft:#33290F;
+    --edge:#6B7290;
+    --dot:#222736;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#101218;--bg-2:#161922;--surface:#1B1F2A;--ink:#ECEDF2;--ink-2:#B4B8C6;--ink-3:#8C91A3;--line:#2B3040;
+  --accent:#8FA0FF;--accent-ink:#0F1220;--accent-soft:#232A4D;--warn:#F0C168;--warn-soft:#33290F;--edge:#6B7290;--dot:#222736;
+  color-scheme:dark;
+}
+
 *{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth}
-body{font-family:var(--sans);background:var(--paper);color:var(--ink);font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased}
+html{scroll-behavior:smooth;scroll-padding-top:84px;-webkit-text-size-adjust:100%}
+body{
+  font-family:var(--sans);font-size:17px;line-height:1.65;color:var(--ink);background:var(--bg);
+  background-image:radial-gradient(var(--dot) 1px,transparent 1px);background-size:22px 22px;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;
+}
 img,svg{display:block;max-width:100%}
-a{color:var(--accent)}
-.wrap{max-width:var(--max);margin-inline:auto;padding-inline:var(--space-4)}
-.skip{position:absolute;left:-9999px;top:0;background:var(--ink);color:#fff;padding:.6rem 1rem;z-index:99}
-.skip:focus{left:var(--space-2);top:var(--space-2)}
+a{color:var(--accent);text-underline-offset:3px}
+code,pre{font-family:var(--mono)}
+code{font-size:.86em;background:var(--accent-soft);padding:.12em .4em;border-radius:5px;overflow-wrap:anywhere}
+.wrap{max-width:var(--max);margin-inline:auto;padding-inline:clamp(1.1rem,4vw,2rem)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--ink);color:var(--bg);padding:.6rem 1rem;z-index:99;border-radius:0 0 8px 0}
+.skip:focus{left:0}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
 
 /* header */
-header.site{border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--paper) 92%,transparent);backdrop-filter:blur(6px);position:sticky;top:0;z-index:50}
-.nav{display:flex;align-items:center;justify-content:space-between;height:64px}
-.brand{display:flex;align-items:center;gap:.6rem;font-family:var(--serif);font-weight:700;font-size:1.35rem;color:var(--ink);text-decoration:none;letter-spacing:.01em}
-.brand svg{width:26px;height:26px}
-nav.links{display:flex;gap:var(--space-3);align-items:center}
-nav.links a{color:var(--ink-soft);text-decoration:none;font-size:.95rem;padding:.4rem 0;border-bottom:2px solid transparent}
+header.site{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.nav{display:flex;align-items:center;gap:1.5rem;min-height:62px}
+.brand{display:flex;align-items:center;gap:.55rem;font-family:var(--serif);font-weight:600;font-size:1.4rem;color:var(--ink);text-decoration:none;flex:none}
+.brand svg{width:26px;height:26px;color:var(--accent)}
+nav.links{margin-left:auto;display:flex;align-items:center;gap:1.4rem;font-size:.93rem}
+nav.links a{color:var(--ink-2);text-decoration:none;padding:.3rem 0;border-bottom:2px solid transparent;white-space:nowrap}
 nav.links a:hover{color:var(--ink);border-bottom-color:var(--accent)}
-a.btn{display:inline-block;text-decoration:none;font-weight:700;font-size:.95rem;padding:.7rem 1.4rem;border:1.5px solid var(--ink);color:var(--ink);background:transparent;transition:background .2s,color .2s}
-a.btn:hover{background:var(--ink);color:var(--paper)}
-a.btn.primary{background:var(--ink);color:var(--paper)}
-a.btn.primary:hover{background:var(--accent);border-color:var(--accent)}
-a.btn:focus-visible,nav.links a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.btn{display:inline-flex;align-items:center;gap:.5rem;font:600 .95rem var(--sans);text-decoration:none;padding:.72rem 1.3rem;border-radius:999px;border:1.5px solid var(--ink);color:var(--ink);background:transparent;transition:background .18s,color .18s,border-color .18s;cursor:pointer}
+.btn:hover{background:var(--ink);color:var(--bg)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+nav.links a.btn{padding:.45rem 1rem;color:var(--ink);border-bottom:1.5px solid var(--ink)}
+nav.links a.btn:hover{color:var(--bg)}
 
 /* hero */
-.hero{padding:var(--space-12) 0 var(--space-8);border-bottom:1px solid var(--line)}
-.kicker{font-size:.8rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:var(--space-2)}
-h1{font-family:var(--serif);font-weight:600;font-size:clamp(2.3rem,5.4vw,3.9rem);line-height:1.12;letter-spacing:-.01em;max-width:21ch;text-wrap:balance}
-.hero p.lede{margin-top:var(--space-3);max-width:58ch;color:var(--ink-soft);font-size:1.12rem}
-.hero .cta{margin-top:var(--space-4);display:flex;gap:var(--space-2);flex-wrap:wrap}
-.hero-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:var(--space-8);align-items:center}
-.graphfig{border:1px solid var(--line);background:var(--card);padding:var(--space-3)}
-.graphfig figcaption{font-size:.82rem;color:var(--ink-faint);margin-top:.7rem;text-align:center}
-.graphfig svg{width:100%;height:auto}
+.hero{padding:clamp(3rem,8vw,6.5rem) 0 clamp(3rem,6vw,5rem)}
+.hero-grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:clamp(2rem,5vw,4.5rem);align-items:center}
+.kicker{display:inline-flex;align-items:center;gap:.5rem;font:500 .78rem var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);background:var(--surface);border:1px solid var(--line);padding:.3rem .8rem;border-radius:999px;margin-bottom:1.4rem}
+.kicker i{width:7px;height:7px;border-radius:50%;background:var(--accent);display:block}
+h1{font-family:var(--serif);font-weight:500;font-size:clamp(2.6rem,6vw,4.4rem);line-height:1.04;letter-spacing:-.02em;text-wrap:balance}
+h1 em{font-style:italic;color:var(--accent)}
+.lede{margin-top:1.4rem;font-size:1.15rem;color:var(--ink-2);max-width:54ch}
+.cta{margin-top:2rem;display:flex;gap:.8rem;flex-wrap:wrap}
+.hero-note{margin-top:1.2rem;font-size:.88rem;color:var(--ink-3)}
 
-/* stats band */
-.stats{border-bottom:1px solid var(--line);background:var(--card)}
-.stats .wrap{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-3);padding-block:var(--space-4)}
-.stat b{display:block;font-family:var(--serif);font-size:2.1rem;font-weight:600;line-height:1.1}
-.stat span{font-size:.85rem;color:var(--ink-soft)}
+.graph-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:1rem 1rem .8rem;box-shadow:0 1px 0 var(--line),0 18px 40px -24px rgba(20,25,60,.35)}
+.graph-card svg{width:100%;height:auto}
+.graph-card figcaption{font-size:.82rem;color:var(--ink-3);padding:.6rem .4rem 0;display:flex;flex-wrap:wrap;gap:.4rem 1.2rem}
+.lg{display:inline-flex;align-items:center;gap:.45rem}
+.lg svg{width:26px;height:8px;display:inline-block}
+.mk{fill:var(--edge)}
+.n-rect{fill:var(--surface);stroke:var(--ink);stroke-width:1.4}
+.n-rect.hl{fill:var(--accent-soft);stroke:var(--accent)}
+.n-rect.dim{stroke:var(--edge);stroke-dasharray:4 4}
+.n-txt{font:500 13.5px var(--serif);fill:var(--ink);text-anchor:middle}
+.e{stroke:var(--edge);stroke-width:1.5;fill:none}
+.e.dash{stroke-dasharray:5 5}
+.e-txt{font:400 10.5px var(--mono);fill:var(--ink-3);text-anchor:middle}
+
+/* facts band */
+.facts{background:var(--surface);border-block:1px solid var(--line)}
+.facts .wrap{display:grid;grid-template-columns:repeat(4,1fr)}
+.fact{padding:1.6rem 1.2rem;border-left:1px solid var(--line)}
+.fact:first-child{border-left:0;padding-left:0}
+.fact b{display:block;font:500 2.3rem/1.1 var(--serif);letter-spacing:-.01em}
+.fact span{font-size:.86rem;color:var(--ink-2)}
 
 /* sections */
-section{padding-block:var(--space-12)}
-section h2{font-family:var(--serif);font-weight:600;font-size:clamp(1.7rem,3.2vw,2.4rem);letter-spacing:-.01em;max-width:30ch;text-wrap:balance}
-section .sub{margin-top:var(--space-2);color:var(--ink-soft);max-width:64ch}
-.sec-head{margin-bottom:var(--space-6)}
+section{padding-block:clamp(3.5rem,8vw,6rem)}
+section.alt{background:var(--bg-2);border-block:1px solid var(--line)}
+.eyebrow{font:500 .78rem var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin-bottom:.7rem}
+h2{font-family:var(--serif);font-weight:500;font-size:clamp(1.9rem,3.8vw,2.8rem);line-height:1.12;letter-spacing:-.015em;max-width:24ch;text-wrap:balance}
+.sub{margin-top:.9rem;color:var(--ink-2);max-width:62ch}
+.sec-head{margin-bottom:clamp(2rem,4vw,3.2rem)}
+h3{font-family:var(--serif);font-weight:600;font-size:1.28rem;line-height:1.25}
 
-/* pipeline */
-.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-3);counter-reset:step}
-.step{border-top:3px solid var(--ink);padding:var(--space-3) var(--space-2) var(--space-2)}
-.step::before{counter-increment:step;content:counter(step,decimal-leading-zero);font-family:var(--serif);font-size:.95rem;color:var(--accent);font-weight:600}
-.step h3{font-family:var(--serif);font-size:1.3rem;font-weight:600;margin:.4rem 0 .5rem}
-.step p{font-size:.95rem;color:var(--ink-soft)}
-.step code{font-size:.85em;background:var(--accent-soft);padding:.1em .35em}
+/* steps */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:1.2rem;counter-reset:s}
+.step{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:1.6rem 1.5rem 1.5rem;position:relative}
+.step::before{counter-increment:s;content:counter(s);display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font:600 .95rem var(--sans);margin-bottom:1rem}
+.step h3{margin-bottom:.5rem}
+.step p{font-size:.95rem;color:var(--ink-2)}
 
-/* run instructions */
-.cmdlist{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-3)}
-.cmdlist li{display:flex;gap:var(--space-3);align-items:baseline;border-top:1px solid var(--line);padding-top:var(--space-3)}
-.cmdlist .n{font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--accent)}
-.cmdlist div{font-size:.95rem;color:var(--ink-soft)}
-.cmdlist b{color:var(--ink)}
-.cmdlist code{font-size:.85em;background:var(--accent-soft);padding:.1em .35em}
+/* features */
+.features{display:grid;grid-template-columns:repeat(3,1fr);gap:1.2rem}
+.feature{padding:1.5rem 0 0;border-top:2px solid var(--ink)}
+.feature h3{margin-bottom:.45rem}
+.feature p{font-size:.95rem;color:var(--ink-2)}
 
-/* feature grid */
-.features{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line)}
-.feature{background:var(--card);padding:var(--space-4) var(--space-3)}
-.feature .ic{width:30px;height:30px;color:var(--accent);margin-bottom:var(--space-2)}
-.feature h3{font-family:var(--serif);font-size:1.25rem;font-weight:600;margin-bottom:.4rem}
-.feature p{font-size:.95rem;color:var(--ink-soft)}
-
-/* sample cards */
-.samples{display:grid;grid-template-columns:repeat(2,1fr);gap:var(--space-3)}
-.sample{background:var(--card);border:1px solid var(--line);padding:var(--space-3) var(--space-4)}
-.sample h3{font-family:var(--serif);font-size:1.2rem;font-weight:600}
-.sample .math{font-size:1.15rem;margin:.7rem 0;overflow-x:auto;overflow-y:hidden;padding-block:.2rem}
-.sample p{font-size:.92rem;color:var(--ink-soft)}
+/* examples */
+.relkey{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.4rem}
+.tag{font:500 .74rem var(--mono);letter-spacing:.03em;color:var(--accent);background:var(--accent-soft);padding:.25rem .65rem;border-radius:999px}
+.samples{display:grid;grid-template-columns:repeat(2,1fr);gap:1.2rem}
+.sample{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:1.4rem 1.5rem;min-width:0}
+.sample .math{margin:.7rem 0 .5rem;overflow-x:auto;overflow-y:hidden;padding-block:.25rem}
+.sample p{font-size:.92rem;color:var(--ink-2)}
 .sample .tags{margin-top:.8rem;display:flex;gap:.4rem;flex-wrap:wrap}
-.tag{font-size:.72rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);padding:.2rem .55rem}
+.note{margin-top:1.4rem;font-size:.88rem;color:var(--ink-3);max-width:70ch}
 
-/* evaluation table */
-table{width:100%;border-collapse:collapse;background:var(--card);font-size:.95rem}
-caption{text-align:left;font-size:.85rem;color:var(--ink-faint);padding-bottom:.6rem}
-th,td{text-align:left;padding:.75rem 1rem;border-bottom:1px solid var(--line)}
-thead th{border-bottom:2px solid var(--ink);font-size:.8rem;letter-spacing:.08em;text-transform:uppercase}
-td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
-.pass{font-weight:700}
-.table-scroll{overflow-x:auto}
+/* run */
+.run-grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:clamp(1.5rem,4vw,3rem);align-items:start}
+.cmd-steps{list-style:none;display:grid;gap:1.4rem}
+.cmd-steps li{display:grid;grid-template-columns:2rem 1fr;gap:.9rem}
+.cmd-steps .n{font:500 1.5rem/1 var(--serif);color:var(--accent)}
+.cmd-steps h3{font-size:1.1rem;margin-bottom:.2rem}
+.cmd-steps p{font-size:.93rem;color:var(--ink-2)}
+.term{background:#14161D;color:#E8EAF2;border-radius:12px;overflow:hidden;border:1px solid #2A2F3E}
+.term-bar{display:flex;align-items:center;justify-content:space-between;padding:.55rem .9rem;background:#1C2029;border-bottom:1px solid #2A2F3E;font:500 .74rem var(--mono);color:#9AA0B4}
+.term pre{padding:1rem 1.1rem;overflow-x:auto;font-size:.84rem;line-height:1.75}
+.term .c{color:#7F869C}
+.term .p{color:#8FA0FF;user-select:none}
+.copy{font:500 .74rem var(--mono);color:#C9CEE0;background:transparent;border:1px solid #3A4054;border-radius:6px;padding:.2rem .6rem;cursor:pointer}
+.copy:hover{background:#2A2F3E}
+.term + .term{margin-top:1rem}
 
-/* ethics */
-.ethics{background:var(--card);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+/* testing table */
+.table-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+table{width:100%;border-collapse:collapse;font-size:.94rem;min-width:560px}
+th,td{text-align:left;padding:.85rem 1.1rem;border-bottom:1px solid var(--line);vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+thead th{font:500 .74rem var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);background:var(--bg-2)}
+td.res{font-weight:600;white-space:nowrap}
+.callout{margin-top:1.4rem;background:var(--warn-soft);border:1px solid color-mix(in srgb,var(--warn) 35%,transparent);color:var(--ink);border-radius:var(--r);padding:1rem 1.2rem;font-size:.92rem;max-width:80ch}
+.callout b{color:var(--warn)}
 
-footer{border-top:1px solid var(--line);padding-block:var(--space-6);font-size:.9rem;color:var(--ink-faint)}
-footer .wrap{display:flex;justify-content:space-between;gap:var(--space-3);flex-wrap:wrap}
-footer a{color:var(--ink-soft)}
+/* responsible use */
+.two{display:grid;grid-template-columns:1fr 1fr;gap:clamp(1.5rem,4vw,3.5rem)}
+.two h3{margin-bottom:.5rem}
+.two p{color:var(--ink-2);font-size:.97rem}
 
-@media (max-width:900px){
-  .hero-grid{grid-template-columns:1fr}
+footer{border-top:1px solid var(--line);padding-block:2.4rem;font-size:.88rem;color:var(--ink-3);background:var(--bg)}
+footer .wrap{display:flex;justify-content:space-between;gap:1rem 2rem;flex-wrap:wrap}
+footer a{color:var(--ink-2)}
+
+@media (max-width:960px){
+  .hero-grid,.run-grid{grid-template-columns:1fr}
   .steps,.features{grid-template-columns:1fr 1fr}
-  .stats .wrap{grid-template-columns:repeat(2,1fr)}
+  .facts .wrap{grid-template-columns:repeat(2,1fr)}
+  .fact:nth-child(3){border-left:0;padding-left:0}
+  .fact:nth-child(n+3){border-top:1px solid var(--line)}
 }
-@media (max-width:600px){
+@media (max-width:640px){
   body{font-size:16px}
-  section{padding-block:var(--space-8)}
-  .steps,.features,.samples{grid-template-columns:1fr}
-  nav.links a:not(.btn){display:none}
+  .nav{flex-wrap:wrap;gap:.2rem 1rem;padding-block:.6rem}
+  nav.links{order:3;flex-basis:100%;margin-left:0;overflow-x:auto;gap:1.2rem;padding-bottom:.3rem;scrollbar-width:none}
+  nav.links::-webkit-scrollbar{display:none}
+  nav.links a.btn{margin-left:auto}
+  .steps,.features,.samples,.two{grid-template-columns:1fr}
+  .cta .btn{flex:1 1 100%;justify-content:center}
 }
 @media (prefers-reduced-motion:reduce){
   html{scroll-behavior:auto}
@@ -144,15 +222,16 @@ footer a{color:var(--ink-soft)}
 <header class="site">
   <div class="wrap nav">
     <a class="brand" href="./" aria-label="Mathernet home">
-      <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="7" cy="25" r="3"/><circle cx="25" cy="24" r="3"/><circle cx="16" cy="7" r="3"/><path d="M9 23 14 9M18 9l6 13M10 25h12"/></svg>
+      <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="25" r="3"/><circle cx="25" cy="24" r="3"/><circle cx="16" cy="7" r="3"/><path d="M9 23 14 9M18 9l6 13M10 25h12"/></svg>
       Mathernet
     </a>
     <nav class="links" aria-label="Main">
       <a href="#how">How it works</a>
       <a href="#features">Features</a>
-      <a href="#library">Library</a>
-      <a href="#evaluation">Evaluation</a>
+      <a href="#examples">Examples</a>
       <a href="#run">Run it</a>
+      <a href="#testing">Testing</a>
+      <a href="#responsible">Privacy</a>
       <a class="btn" href="https://github.com/QuackCatt/Mathernet">GitHub</a>
     </nav>
   </div>
@@ -160,189 +239,250 @@ footer a{color:var(--ink-soft)}
 
 <main id="main">
 
-<section class="hero">
+<section class="hero" style="padding-block:clamp(3rem,8vw,6.5rem) clamp(3rem,6vw,5rem)">
   <div class="wrap hero-grid">
     <div>
-      <p class="kicker">HKU AILT9019 · Team project</p>
-      <h1>Learn formulas as a map, not a list.</h1>
-      <p class="lede">Mathernet is a local-first study assistant. Describe a formula in plain language and it builds a rendered card, links it into a force-directed knowledge graph with prerequisite and derivation edges, and lets you cut away anything the model got wrong — every relationship traceable to its source.</p>
+      <p class="kicker"><i></i>HKU AILT9019 · AI Literacy II</p>
+      <h1>Learn formulas as a <em>map</em>, not a list.</h1>
+      <p class="lede">Describe a formula in your own words. Mathernet finds candidates, builds a rendered card, and links it into a knowledge map of prerequisites and derivations. You review the sources, add your own notes, and cut any connection the model got wrong.</p>
       <div class="cta">
-        <a class="btn primary" href="https://github.com/QuackCatt/Mathernet#getting-started">Run it locally</a>
+        <a class="btn primary" href="#run">Run it locally</a>
         <a class="btn" href="https://github.com/QuackCatt/Mathernet">View source</a>
       </div>
+      <p class="hero-note">Runs on your computer. Bring your own OpenRouter or DeepSeek key.</p>
     </div>
-    <figure class="graphfig" aria-label="Illustration of Mathernet's dependency graph connecting Euler's identity, Taylor series and related formulas">
-      <svg viewBox="0 0 420 300" role="img" aria-hidden="true">
-        <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#9AA0B4"/></marker></defs>
-        <g stroke="#9AA0B4" stroke-width="1.4" fill="none">
-          <path d="M90 230 C 130 190, 150 150, 185 118" marker-end="url(#arr)"/>
-          <path d="M185 118 C 220 150, 250 185, 290 205" marker-end="url(#arr)"/>
-          <path d="M90 230 C 160 265, 240 260, 290 205" stroke-dasharray="5 5" marker-end="url(#arr)"/>
-          <path d="M185 118 C 190 80, 220 55, 255 50" marker-end="url(#arr)"/>
-          <path d="M345 120 C 320 90, 300 65, 285 55" stroke-dasharray="5 5" marker-end="url(#arr)"/>
-          <path d="M60 120 C 90 150, 120 180, 150 205" stroke-dasharray="5 5" marker-end="url(#arr)"/>
-        </g>
-        <g font-family="Crimson Pro, serif" font-size="13" text-anchor="middle">
-          <g><circle cx="90" cy="230" r="30" fill="#EAEDFB" stroke="#3B4CCA" stroke-width="1.5"/><text x="90" y="234" fill="#181A20">Taylor</text></g>
-          <g><circle cx="185" cy="118" r="30" fill="#fff" stroke="#181A20" stroke-width="1.5"/><text x="185" y="122" fill="#181A20">Maclaurin</text></g>
-          <g><circle cx="290" cy="205" r="30" fill="#fff" stroke="#181A20" stroke-width="1.5"/><text x="290" y="209" fill="#181A20">Euler</text></g>
-          <g><circle cx="270" cy="48" r="24" fill="#EAEDFB" stroke="#3B4CCA" stroke-width="1.5"/><text x="270" y="52" fill="#181A20">Newton</text></g>
-          <g><circle cx="360" cy="140" r="24" fill="#fff" stroke="#9AA0B4" stroke-width="1.5" stroke-dasharray="4 4"/><text x="360" y="144" fill="#4A4E5A">AM-GM</text></g>
-          <g><circle cx="42" cy="105" r="24" fill="#fff" stroke="#9AA0B4" stroke-width="1.5" stroke-dasharray="4 4"/><text x="42" y="109" fill="#4A4E5A">Markov</text></g>
-        </g>
+
+    <figure class="graph-card">
+      <svg viewBox="0 0 480 350" role="img" aria-label="Illustration of a Mathernet map. Taylor series points to Maclaurin series and Newton's method; Maclaurin series points to Euler's identity; Markov's inequality points to Chebyshev's inequality with a dashed, unverified edge.">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk" d="M0 1 10 5 0 9z"/></marker>
+        </defs>
+        <path class="e" d="M140 154 C165 130 185 116 208 100" marker-end="url(#ar)"/>
+        <text class="e-txt" x="138" y="116">prerequisite</text>
+        <path class="e" d="M292 94 C320 105 335 122 345 140" marker-end="url(#ar)"/>
+        <text class="e-txt" x="352" y="108">derivation basis</text>
+        <path class="e" d="M122 190 C150 215 175 228 198 236" marker-end="url(#ar)"/>
+        <text class="e-txt" x="92" y="228">derivation basis</text>
+        <path class="e dash" d="M152 306 L304 306" marker-end="url(#ar)"/>
+        <text class="e-txt" x="228" y="296">derivation basis · unverified</text>
+
+        <g><rect class="n-rect hl" x="40" y="152" width="120" height="38" rx="19"/><text class="n-txt" x="100" y="176">Taylor series</text></g>
+        <g><rect class="n-rect" x="196" y="62" width="128" height="38" rx="19"/><text class="n-txt" x="260" y="86">Maclaurin series</text></g>
+        <g><rect class="n-rect hl" x="320" y="146" width="130" height="38" rx="19"/><text class="n-txt" x="385" y="170">Euler’s identity</text></g>
+        <g><rect class="n-rect" x="196" y="238" width="136" height="38" rx="19"/><text class="n-txt" x="264" y="262">Newton’s method</text></g>
+        <g><rect class="n-rect dim" x="30" y="287" width="124" height="38" rx="19"/><text class="n-txt" x="92" y="311">Markov’s ineq.</text></g>
+        <g><rect class="n-rect dim" x="304" y="287" width="146" height="38" rx="19"/><text class="n-txt" x="377" y="311">Chebyshev’s ineq.</text></g>
       </svg>
-      <figcaption>Solid edges are learner-verified; dashed edges are AI suggestions awaiting review.</figcaption>
+      <figcaption>
+        <span class="lg"><svg viewBox="0 0 26 8" aria-hidden="true"><path class="e" d="M0 4h26"/></svg>edge with sources</span>
+        <span class="lg"><svg viewBox="0 0 26 8" aria-hidden="true"><path class="e dash" d="M0 4h26"/></svg>unverified edge</span>
+        <span>Illustration, not a screenshot.</span>
+      </figcaption>
     </figure>
   </div>
 </section>
 
-<div class="stats">
+<div class="facts">
   <div class="wrap">
-    <div class="stat"><b>14</b><span>formulas in the shipped library</span></div>
-    <div class="stat"><b>22</b><span>dependency edges across 4 relation types</span></div>
-    <div class="stat"><b>129</b><span>unit &amp; integration tests passing</span></div>
-    <div class="stat"><b>0</b><span>third-party runtime dependencies</span></div>
+    <div class="fact"><b>4</b><span>relation types: prerequisite, derivation basis, special case, generalization</span></div>
+    <div class="fact"><b>2</b><span>supported AI providers: OpenRouter and DeepSeek</span></div>
+    <div class="fact"><b>0</b><span>third-party runtime dependencies</span></div>
+    <div class="fact"><b>129</b><span>automated tests, all passing</span></div>
   </div>
 </div>
 
 <section id="how">
   <div class="wrap">
     <div class="sec-head">
+      <p class="eyebrow">How it works</p>
       <h2>From a sentence to a study map in three steps</h2>
-      <p class="sub">One integration point: your own provider API key (OpenRouter or DeepSeek). Everything else runs on your machine.</p>
+      <p class="sub">The only outside connection is the provider API key you supply. Maps, notes and chats stay on your own disk.</p>
     </div>
     <div class="steps">
       <article class="step">
         <h3>Describe</h3>
-        <p>Type what you mean — “the inequality between arithmetic and geometric means”, a LaTeX string, or a half-remembered property. The assistant proposes up to five candidates and you pick the right one.</p>
+        <p>Type what you mean: “the inequality between arithmetic and geometric means”, a LaTeX string, or a half-remembered property. Pick the right formula from the candidates, or reopen one you already saved.</p>
       </article>
       <article class="step">
         <h3>Connect</h3>
-        <p>The chosen formula becomes a KaTeX-rendered card with a short summary and source links, and the model suggests edges — prerequisite, derivation basis, special case, generalization — into your existing map.</p>
+        <p>The chosen formula becomes a KaTeX-rendered card with a short AI summary and any sources the model returned. Suggested dependency edges appear on your map straight away, each with its rationale.</p>
       </article>
       <article class="step">
-        <h3>Cut &amp; keep</h3>
-        <p>Suggestions appear immediately as dashed lines. You are the editor: confirm what holds, snip what doesn’t. Deleting a node also cleans up its deep-dive sessions and notes, so nothing stale lingers.</p>
+        <h3>Review &amp; cut</h3>
+        <p>You are the editor. Edges without sources are marked unverified, and any edge that is wrong can be cut from the map. Deleting a node also removes its deep-dive sessions and notes.</p>
       </article>
     </div>
   </div>
 </section>
 
-<section id="features" style="padding-top:0">
+<section id="features" class="alt">
   <div class="wrap">
     <div class="sec-head">
+      <p class="eyebrow">Features</p>
       <h2>Built for learners who want to inspect everything</h2>
     </div>
     <div class="features">
       <article class="feature">
-        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3.2"/></svg>
-        <h3>Deep dives that stay grounded</h3>
-        <p>Ask for a long-form article on any node and chat about it. Each formula and each relationship keeps its own conversation, and model answers carry the sources they cite.</p>
+        <h3>Interactive knowledge map</h3>
+        <p>A force-directed canvas you can drag, pan and zoom. Selecting a node highlights its neighbours, and nodes are reachable by keyboard.</p>
       </article>
       <article class="feature">
-        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="1.5"/><path d="M3 9h18M8 4v14"/></svg>
-        <h3>Multiple mind-map sessions</h3>
-        <p>Keep a probability revision web separate from your analysis notes. Named sessions, per-session graphs, and study statuses (new / learning / reviewed / needs review) tracked per formula.</p>
+        <h3>Several mind maps</h3>
+        <p>Keep a probability revision map apart from your analysis notes. Maps are named, pinnable and deletable, and each shows only the edges between its own formulas.</p>
       </article>
       <article class="feature">
-        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3l7 4v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V7z"/><path d="M9 12l2 2 4-4"/></svg>
-        <h3>Honest by construction</h3>
-        <p>Safety rules refuse exam-solving, fabricated derivations and non-formula requests before any API call. Local server binds to loopback with strict Host/Origin checks; data files are written private.</p>
+        <h3>Deep dives that continue</h3>
+        <p>Ask for a long-form article on a formula or on one relationship, then keep the conversation going. Each one keeps its own saved thread.</p>
+      </article>
+      <article class="feature">
+        <h3>Your notes stay yours</h3>
+        <p>AI-generated context and your private notes live in separate places on every card. A study status records activity and is never presented as proof of mastery.</p>
+      </article>
+      <article class="feature">
+        <h3>Sources, labelled honestly</h3>
+        <p>Sources are shown as model output. Mathernet adds no citations of its own and does not independently verify the URLs a model returns.</p>
+      </article>
+      <article class="feature">
+        <h3>Refuses the wrong jobs</h3>
+        <p>Assessed-work answers, unrelated requests, and requests to fabricate citations or derivations are declined locally, before any API call is made.</p>
       </article>
     </div>
   </div>
 </section>
 
-<section id="library" style="padding-top:0">
+<section id="examples">
   <div class="wrap">
     <div class="sec-head">
-      <h2>A sample of the shipped library</h2>
-      <p class="sub">The demo dataset spans calculus, probability, inequalities and numerical methods — small enough to audit, connected enough to matter.</p>
+      <p class="eyebrow">Examples</p>
+      <h2>The kind of card you will build</h2>
+      <p class="sub">Four well-known formulas, shown the way a card presents them: rendered expression, a plain-language gloss, and how it connects to others.</p>
+    </div>
+    <div class="relkey" aria-label="Relation types">
+      <span class="tag">prerequisite</span><span class="tag">derivation basis</span><span class="tag">special case</span><span class="tag">generalization</span>
     </div>
     <div class="samples">
       <article class="sample">
-        <h3>Euler’s Identity</h3>
+        <h3>Euler’s identity</h3>
         <div class="math">$$e^{i\pi} + 1 = 0$$</div>
-        <p>Connects five fundamental constants; the special case of Euler’s formula at $x=\pi$.</p>
-        <div class="tags"><span class="tag">complex analysis</span><span class="tag">special case of</span><span class="tag">Taylor-based</span></div>
+        <p>Links five fundamental constants. It is the special case $x=\pi$ of Euler’s formula $e^{ix}=\cos x+i\sin x$.</p>
+        <div class="tags"><span class="tag">special case</span><span class="tag">derivation basis</span></div>
       </article>
       <article class="sample">
-        <h3>Markov’s Inequality</h3>
+        <h3>Markov’s inequality</h3>
         <div class="math">$$P(X \ge a) \le \frac{\mathbb{E}[X]}{a},\quad X\ge 0,\ a>0$$</div>
-        <p>The most basic concentration bound — Chebyshev falls out of it by squaring the deviation.</p>
-        <div class="tags"><span class="tag">probability</span><span class="tag">derivation basis</span></div>
+        <p>The most basic tail bound. Chebyshev’s inequality follows by applying it to the squared deviation.</p>
+        <div class="tags"><span class="tag">derivation basis</span></div>
       </article>
       <article class="sample">
-        <h3>AM–GM Inequality</h3>
+        <h3>AM–GM inequality</h3>
         <div class="math">$$\frac{a_1+\cdots+a_n}{n} \ge \sqrt[n]{a_1 \cdots a_n}$$</div>
-        <p>Arithmetic mean dominates geometric mean for non-negative reals, with equality iff all terms match.</p>
-        <div class="tags"><span class="tag">inequalities</span><span class="tag">optimization</span></div>
+        <p>For non-negative reals the arithmetic mean is at least the geometric mean, with equality exactly when all terms are equal.</p>
+        <div class="tags"><span class="tag">prerequisite</span><span class="tag">generalization</span></div>
       </article>
       <article class="sample">
-        <h3>Newton’s Method</h3>
+        <h3>Newton’s method</h3>
         <div class="math">$$x_{n+1} = x_n - \frac{f(x_n)}{f'(x_n)}$$</div>
-        <p>Root-finding by first-order Taylor linearisation — linked in the graph under its derivation basis.</p>
-        <div class="tags"><span class="tag">numerical analysis</span><span class="tag">prerequisite chain</span></div>
+        <p>Root-finding by repeatedly replacing $f$ with its first-order Taylor approximation, so Taylor series sits upstream of it.</p>
+        <div class="tags"><span class="tag">derivation basis</span></div>
       </article>
     </div>
+    <p class="note">These cards illustrate the format. They are not exported from the app, and the connections shown are the standard textbook ones, not model output.</p>
   </div>
 </section>
 
-<section id="run" style="padding-top:0">
+<section id="run" class="alt">
   <div class="wrap">
     <div class="sec-head">
-      <h2>Run it yourself in three commands</h2>
-      <p class="sub">No installation beyond Python — Mathernet ships with zero third-party runtime dependencies.</p>
+      <p class="eyebrow">Run it yourself</p>
+      <h2>No install step. Just Python 3.11 or newer.</h2>
+      <p class="sub">Mathernet starts straight from the downloaded folder. Use a current desktop browser; there is no mobile interface.</p>
     </div>
-    <ol class="cmdlist">
-      <li><span class="n">1</span><div><b>Clone</b> — <code>git clone https://github.com/QuackCatt/Mathernet</code> (or download the ZIP). Requires Python 3.11 or newer.</div></li>
-      <li><span class="n">2</span><div><b>Start</b> — Windows: <code>py .\run_mathernet.py start</code>; macOS / Linux: <code>./mathernet start</code>. The app opens a local server at <code>http://127.0.0.1:8765</code> and prints the URL to visit.</div></li>
-      <li><span class="n">3</span><div><b>Connect a model</b> — open Settings, choose OpenRouter or DeepSeek, paste your API key. Then describe any formula and watch it appear on your map.</div></li>
-    </ol>
-    <p class="sub" style="margin-top:var(--space-3)">Check the build any time with <code>PYTHONPATH=src python -m unittest discover -s tests</code> (129 tests) and re-score the shipped graph with <code>PYTHONPATH=src python scripts/evaluate_real.py</code>.</p>
+    <div class="run-grid">
+      <ol class="cmd-steps">
+        <li><span class="n">1</span><div><h3>Get the code</h3><p>Clone the repository or download the ZIP from GitHub and unzip it. Keep the project folder together.</p></div></li>
+        <li><span class="n">2</span><div><h3>Start it</h3><p>Run the command for your system from inside that folder. Use the exact URL it prints (usually <code>http://127.0.0.1:8765</code>); if the port is busy it picks the next free one.</p></div></li>
+        <li><span class="n">3</span><div><h3>Connect a model</h3><p>Settings open on first launch. Choose OpenRouter or DeepSeek, paste your API key, and save. Then describe any formula. See the <a href="https://github.com/QuackCatt/Mathernet#first-time-setup">README setup guide</a> for key links.</p></div></li>
+      </ol>
+      <div>
+        <div class="term">
+          <div class="term-bar"><span>macOS / Linux</span><button class="copy" type="button" data-copy="git clone https://github.com/QuackCatt/Mathernet&#10;cd Mathernet&#10;./mathernet start">Copy</button></div>
+<pre><span class="p">$ </span>git clone https://github.com/QuackCatt/Mathernet
+<span class="p">$ </span>cd Mathernet
+<span class="p">$ </span>./mathernet start
+<span class="c"># permission error? run: python3 mathernet start</span></pre>
+        </div>
+        <div class="term">
+          <div class="term-bar"><span>Windows</span><button class="copy" type="button" data-copy="git clone https://github.com/QuackCatt/Mathernet&#10;cd Mathernet&#10;py .\run_mathernet.py start">Copy</button></div>
+<pre><span class="p">&gt; </span>git clone https://github.com/QuackCatt/Mathernet
+<span class="p">&gt; </span>cd Mathernet
+<span class="p">&gt; </span>py .\run_mathernet.py start
+<span class="c"># no py launcher? use: python .\run_mathernet.py start</span></pre>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
-<section id="evaluation" style="padding-top:0">
+<section id="testing">
   <div class="wrap">
     <div class="sec-head">
-      <h2>Evaluation we can stand behind</h2>
-      <p class="sub">Results below come from <code>scripts/evaluate_real.py</code>, which scores the actual shipped graph against a hand-checked gold standard, plus the repository test suite. Full JSON output lives in <code>output/evaluation_real.json</code>.</p>
+      <p class="eyebrow">Testing</p>
+      <h2>What we check, and how you can re-run it</h2>
+      <p class="sub">Everything below can be reproduced from a fresh clone with the commands shown.</p>
     </div>
     <div class="table-scroll">
       <table>
-        <caption>Real-corpus evaluation, November 2026 (14 nodes / 22 edges).</caption>
-        <thead><tr><th scope="col">Dimension</th><th scope="col">Method</th><th scope="col">Result</th></tr></thead>
+        <thead><tr><th scope="col">Area</th><th scope="col">How it is checked</th><th scope="col">Result</th></tr></thead>
         <tbody>
-          <tr><td>Dependency structure</td><td>10 hand-checked expected relations vs graph</td><td class="num pass">10 / 10 matched</td></tr>
-          <tr><td>Lookup accuracy</td><td>14 queries incl. aliases, fuzzy phrases, 2 negatives</td><td class="num pass">14 / 14 correct</td></tr>
-          <tr><td>Safety refusals</td><td>exam-grade request, fabrication (EN + ZH), poem, benign control</td><td class="num pass">5 / 5 refused correctly</td></tr>
-          <tr><td>Persistence round-trip</td><td>load → load byte-equality with module presence</td><td class="num pass">pass</td></tr>
-          <tr><td>Deduplication</td><td>case-folded name &amp; alias-collision scan</td><td class="num pass">no duplicates</td></tr>
-          <tr><td>Source traceability</td><td>nodes carrying a live web source URL</td><td class="num">3 / 14 — known limitation</td></tr>
-          <tr><td>Regression suite</td><td><code>python -m unittest discover -s tests</code></td><td class="num pass">129 tests OK</td></tr>
+          <tr><td>Regression suite</td><td><code>PYTHONPATH=src python -m unittest discover -s tests</code></td><td class="res">129 tests pass</td></tr>
+          <tr><td>Safety refusals</td><td>Five cases in <code>scripts/evaluate_real.py</code>: exam-style request, fabrication (English and Chinese), non-formula request, and a benign control</td><td class="res">5 / 5 correct</td></tr>
+          <tr><td>Persistence round-trip</td><td>Save, reload, compare, in the same script</td><td class="res">passes</td></tr>
+          <tr><td>Local server hardening</td><td>Binds to <code>127.0.0.1</code> and rejects unexpected Host and Origin headers</td><td class="res">covered by tests</td></tr>
         </tbody>
       </table>
     </div>
+    <p class="callout"><b>Corpus scoring depends on your own map.</b> <code>scripts/evaluate_real.py</code> also scores a graph against a hand-checked gold standard of 10 expected relations and 14 lookup queries. Learner data is not committed to this repository, so those figures appear only when you run the script on a populated <code>data/mathernet.json</code>.</p>
   </div>
 </section>
 
-<section class="ethics" id="ethics">
+<section id="responsible" class="alt">
   <div class="wrap">
-    <div class="sec-head" style="margin-bottom:var(--space-3)">
-      <h2>Privacy &amp; responsible AI use</h2>
+    <div class="sec-head">
+      <p class="eyebrow">Privacy &amp; responsible use</p>
+      <h2>Your data stays put. AI output stays a draft.</h2>
     </div>
-    <p class="sub" style="max-width:75ch">Mathernet stores your maps, notes and chats as plain JSON on your own disk and never uploads them. Your API key is sent only to the model provider you configure. Model output is treated as a draft: generated summaries, suggested edges and cited sources are labelled as AI-generated, are editable or deletable by you, and are not independently verified by this tool. It refuses assessed-work solving and fabrication requests locally, before any network call.</p>
+    <div class="two">
+      <div>
+        <h3>Local by design</h3>
+        <p>Maps, notes and chats are stored as plain JSON on your own disk. Your API key goes only to the provider you configure, and the app is served on your own machine. Saved cards remain usable offline.</p>
+      </div>
+      <div>
+        <h3>Model output is not verified</h3>
+        <p>Summaries, suggested edges and cited sources are AI-generated, editable, and deletable. Mathernet does not check them independently, so uncited answers are visibly qualified. Treat every card as a starting point for your own checking.</p>
+      </div>
+    </div>
   </div>
 </section>
+
+</main>
 
 <footer>
   <div class="wrap">
-    <span>Mathernet — HKU AILT9019 · AI Literacy II team project, 2025–26.</span>
+    <span>Mathernet · HKU AILT9019 AI Literacy II team project, 2025–26.</span>
     <span><a href="https://github.com/QuackCatt/Mathernet">GitHub</a> · <a href="https://github.com/QuackCatt/Mathernet/blob/main/README.md">README</a> · <a href="https://github.com/QuackCatt/Mathernet/issues">Issues</a></span>
   </div>
 </footer>
 
-</main>
+<script>
+document.querySelectorAll('.copy').forEach(function(btn){
+  btn.addEventListener('click',function(){
+    var text=btn.getAttribute('data-copy');
+    var done=function(){var o=btn.textContent;btn.textContent='Copied';setTimeout(function(){btn.textContent=o},1400)};
+    try{
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,function(){})}
+    }catch(e){}
+  });
+});
+</script>
 </body>
 </html>
