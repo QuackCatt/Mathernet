@@ -1,488 +1,526 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mathernet — learn formulas as a map, not a list</title>
-<meta name="description" content="Mathernet is a local, AI-assisted study tool that turns plain-language descriptions of formulas into an interactive knowledge map with sources you can inspect. HKU AILT9019 team project.">
-<meta name="color-scheme" content="light dark">
-<link rel="icon" type="image/svg+xml" href="favicon.svg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous" onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});"></script>
-<style>
-:root{
-  --bg:#F6F4EE;
-  --bg-2:#EFECE3;
-  --surface:#FFFFFF;
-  --ink:#15171C;
-  --ink-2:#464B58;
-  --ink-3:#6B7080;
-  --line:#DCD8CB;
-  --accent:#2F46C8;
-  --accent-ink:#FFFFFF;
-  --accent-soft:#E6EAFB;
-  --warn:#8A5A00;
-  --warn-soft:#FBF0D6;
-  --edge:#8B91A6;
-  --dot:#D9D5C8;
-  --serif:"Newsreader",Georgia,"Times New Roman",serif;
-  --sans:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;
-  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
-  --max:1120px;
-  --r:10px;
-}
-:root:not([data-theme="light"]){
-  color-scheme:light;
-}
-@media (prefers-color-scheme:dark){
-  :root:not([data-theme="light"]){
-    --bg:#101218;
-    --bg-2:#161922;
-    --surface:#1B1F2A;
-    --ink:#ECEDF2;
-    --ink-2:#B4B8C6;
-    --ink-3:#8C91A3;
-    --line:#2B3040;
-    --accent:#8FA0FF;
-    --accent-ink:#0F1220;
-    --accent-soft:#232A4D;
-    --warn:#F0C168;
-    --warn-soft:#33290F;
-    --edge:#6B7290;
-    --dot:#222736;
-    color-scheme:dark;
-  }
-}
-:root[data-theme="dark"]{
-  --bg:#101218;--bg-2:#161922;--surface:#1B1F2A;--ink:#ECEDF2;--ink-2:#B4B8C6;--ink-3:#8C91A3;--line:#2B3040;
-  --accent:#8FA0FF;--accent-ink:#0F1220;--accent-soft:#232A4D;--warn:#F0C168;--warn-soft:#33290F;--edge:#6B7290;--dot:#222736;
-  color-scheme:dark;
-}
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mathernet — Learn formulas as a map, not a list</title>
+  <meta name="description" content="Mathernet is a local, AI-assisted study tool that turns formula descriptions into an interactive knowledge map.">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}], throwOnError: false});">
+  </script>
+  <style>
+    :root { --background: #F6F4EE; --section-background: #EFECE3; --card-background: #FFFFFF; --text: #15171C; --secondary-text: #555A67; --light-text: #62677A; --border: #DCD8CB; --blue: #2F46C8; --light-blue: #E6EAFB; --warning-background: #FBF0D6; --serif: "Newsreader", Georgia, serif; --sans: "IBM Plex Sans", Arial, sans-serif; --mono: "IBM Plex Mono", monospace }
+    * { box-sizing: border-box }
+    html { scroll-behavior: smooth; scroll-padding-top: 80px }
+    body { margin: 0; color: var(--text); background-color: var(--background); background-image: radial-gradient(#D9D5C8 1px, transparent 1px); background-size: 22px 22px; font-family: var(--sans); font-size: 17px; line-height: 1.65 }
+    img, svg { max-width: 100% }
+    a { color: var(--blue); text-underline-offset: 3px }
+    code, pre { font-family: var(--mono) }
+    code { padding: 2px 5px; border-radius: 4px; background-color: var(--light-blue); font-size: 0.86em; overflow-wrap: anywhere }
+    .container { width: 90%; max-width: 1120px; margin: 0 auto }
+    .skip-link { position: absolute; top: -50px; left: 10px; z-index: 100; padding: 8px 12px; color: white; background: var(--text) }
+    .skip-link:focus { top: 10px }
+    a:focus-visible, button:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px }
+    .site-header { position: sticky; top: 0; z-index: 10; border-bottom: 1px solid var(--border); background-color: var(--background) }
+    .navigation { display: flex; align-items: center; gap: 28px; min-height: 68px }
+    .brand { display: flex; align-items: center; gap: 8px; color: var(--text); font-family: var(--serif); font-size: 1.4rem; font-weight: 600; text-decoration: none }
+    .brand svg { width: 26px; height: 26px; color: var(--blue) }
+    .nav-links { display: flex; align-items: center; justify-content: flex-end; gap: clamp(14px, 1.55vw, 22px); margin-left: auto }
+    .nav-links a { padding: 6px 0; color: var(--secondary-text); font-size: 0.9rem; line-height: 1.2; text-decoration: none; white-space: nowrap }
+    .nav-links a:hover { color: var(--blue) }
+    .nav-links a.button { display: inline-flex; align-items: center; justify-content: center; min-height: 38px; margin-left: 3px; padding: 0 18px; border: 1px solid var(--text); border-radius: 30px; color: var(--text); font-size: 0.9rem; font-weight: 600; line-height: 1; white-space: nowrap }
+    .nav-links a.button:hover { color: white; background-color: var(--text) }
+    .button { display: inline-block; padding: 10px 20px; border: 1px solid var(--text); border-radius: 30px; color: var(--text); background: transparent; font-size: 0.95rem; font-weight: 600; text-decoration: none; transition: background-color 0.2s, color 0.2s }
+    .button:hover { color: white; background-color: var(--text) }
+    .button.primary { border-color: var(--blue); color: white; background-color: var(--blue) }
+    .button.primary:hover { border-color: var(--text); background-color: var(--text) }
+    .hero { padding: 85px 0 70px }
+    .hero-content { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 55px }
+    .kicker { display: inline-flex; align-items: center; gap: 0.5rem; margin-bottom: 1.4rem; padding: 0.3rem 0.8rem; border: 1px solid var(--border); border-radius: 999px; color: var(--secondary-text); background: var(--card-background); font: 500 0.78rem var(--mono); letter-spacing: 0.06em; text-transform: uppercase }
+    .kicker i { display: block; width: 7px; height: 7px; border-radius: 50%; background: var(--blue) }
+    h1, h2, h3 { font-family: var(--serif) }
+    h1 { margin: 0; font-size: clamp(2.9rem, 5.4vw, 4rem); font-weight: 500; line-height: 1.08 }
+    h1 em { color: var(--blue) }
+    .intro-text { max-width: 550px; margin-top: 22px; color: var(--secondary-text); font-size: 1.12rem }
+    .hero-buttons { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px }
+    .hero-note { margin-top: 18px; color: var(--light-text); font-size: 0.88rem }
+    .graph-card { padding: 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--card-background); box-shadow: 0 12px 30px rgba(20, 25, 60, 0.08) }
+    .graph-card svg { display: block; width: 100%; height: auto }
+    .graph-card figcaption { padding: 10px 5px 0; color: var(--light-text); font-size: 0.82rem }
+    .legend-item { display: inline-flex; align-items: center; gap: 7px; margin-right: 15px }
+    .graph-card .legend-line { display: inline-block; flex: none; width: 26px; height: 8px }
+    .graph-edge { fill: none; stroke: #8B91A6; stroke-width: 1.5 }
+    .graph-edge.dashed { stroke-dasharray: 5 5 }
+    .graph-node { fill: white; stroke: var(--text); stroke-width: 1.4 }
+    .graph-node.highlight { fill: var(--light-blue); stroke: var(--blue) }
+    .graph-node.unverified { stroke: #8B91A6; stroke-dasharray: 4 4 }
+    .graph-label { fill: var(--text); font-family: var(--serif); font-size: 13px; text-anchor: middle }
+    .graph-description { fill: var(--light-text); font-family: var(--mono); font-size: 11px; text-anchor: middle }
+    .facts { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--card-background) }
+    .facts-grid { display: grid; grid-template-columns: repeat(4, 1fr) }
+    .fact { padding: 25px 18px; border-left: 1px solid var(--border) }
+    .fact:first-child { padding-left: 0; border-left: none }
+    .fact strong { display: block; font-family: var(--serif); font-size: 2.3rem; font-weight: 500; line-height: 1.2 }
+    .fact span { color: var(--secondary-text); font-size: 0.86rem }
+    section { padding: 75px 0 }
+    .section-alt { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--section-background) }
+    .section-label { margin-bottom: 10px; color: var(--blue); font-family: var(--mono); font-size: 0.78rem; letter-spacing: 1px; text-transform: uppercase }
+    h2 { max-width: 650px; margin: 0; font-size: 2.6rem; font-weight: 500; line-height: 1.15 }
+    .section-intro { max-width: 650px; margin-top: 14px; color: var(--secondary-text) }
+    .section-heading { margin-bottom: 38px }
+    h3 { margin-top: 0; font-size: 1.3rem; font-weight: 600; line-height: 1.3 }
+    .steps-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px }
+    .step-card { padding: 25px; border: 1px solid var(--border); border-radius: 10px; background: var(--card-background) }
+    .step-number { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; margin-bottom: 18px; border-radius: 50%; color: white; background: var(--blue); font-weight: 600 }
+    .step-card h3 { margin-bottom: 8px }
+    .step-card p, .feature-card p { margin: 0; color: var(--secondary-text); font-size: 0.95rem }
+    .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px 25px }
+    .feature-card { padding-top: 15px; border-top: 2px solid var(--text) }
+    .feature-card h3 { margin-bottom: 8px }
+    .tag-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px }
+    .tag { padding: 4px 10px; border-radius: 20px; color: var(--blue); background: var(--light-blue); font-family: var(--mono); font-size: 0.74rem }
+    .examples-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px }
+    .example-card { min-width: 0; padding: 23px; border: 1px solid var(--border); border-radius: 10px; background: var(--card-background) }
+    .example-card h3 { margin-bottom: 12px }
+    .formula { margin: 15px 0; padding: 8px 0; overflow-x: auto }
+    .example-card p { margin: 0; color: var(--secondary-text); font-size: 0.93rem }
+    .example-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 15px }
+    .small-note { max-width: 750px; margin-top: 20px; color: var(--light-text); font-size: 0.88rem }
+    .run-content { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 40px }
+    .run-steps { margin: 0; padding-left: 25px }
+    .run-steps li { margin-bottom: 24px; padding-left: 8px }
+    .run-steps h3 { margin-bottom: 5px; font-size: 1.15rem }
+    .run-steps p { margin: 0; color: var(--secondary-text); font-size: 0.94rem }
+    .code-card { margin-bottom: 16px; overflow: hidden; border: 1px solid #2A2F3E; border-radius: 10px; color: #E8EAF2; background: #14161D }
+    .code-heading { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid #2A2F3E; color: #C9CEE0; background: #1C2029; font-family: var(--mono); font-size: 0.78rem }
+    .copy-button { padding: 4px 9px; border: 1px solid #555D73; border-radius: 5px; color: #E8EAF2; background: transparent; cursor: pointer }
+    .copy-button:hover { background: #343A4A }
+    .copy-button:disabled { opacity: 0.7; cursor: wait }
+    .code-card pre { margin: 0; padding: 16px; overflow-x: auto; font-size: 0.82rem; line-height: 1.8 }
+    .terminal-symbol { color: #8FA0FF }
+    .code-comment { color: #8C91A3 }
+    .table-container { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--card-background) }
+    table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 0.93rem }
+    th, td { padding: 14px 17px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top }
+    th { color: var(--light-text); background: var(--section-background); font-family: var(--mono); font-size: 0.76rem; font-weight: 500; text-transform: uppercase }
+    tbody tr:last-child td { border-bottom: none }
+    .result { font-weight: 600; white-space: nowrap }
+    .notice { max-width: 850px; margin-top: 20px; padding: 16px 18px; border: 1px solid #E8D5A7; border-radius: 9px; background: var(--warning-background); font-size: 0.92rem }
+    .privacy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px }
+    .privacy-grid h3 { margin-bottom: 8px }
+    .privacy-grid p { margin: 0; color: var(--secondary-text); font-size: 0.97rem }
+    footer { padding: 30px 0; border-top: 1px solid var(--border); color: var(--light-text); background: var(--background); font-size: 0.88rem }
+    .footer-content { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px 25px }
+    footer a { color: var(--secondary-text) }
 
-*{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth;scroll-padding-top:84px;-webkit-text-size-adjust:100%}
-body{
-  font-family:var(--sans);font-size:17px;line-height:1.65;color:var(--ink);background:var(--bg);
-  background-image:radial-gradient(var(--dot) 1px,transparent 1px);background-size:22px 22px;
-  -webkit-font-smoothing:antialiased;overflow-x:hidden;
-}
-img,svg{display:block;max-width:100%}
-a{color:var(--accent);text-underline-offset:3px}
-code,pre{font-family:var(--mono)}
-code{font-size:.86em;background:var(--accent-soft);padding:.12em .4em;border-radius:5px;overflow-wrap:anywhere}
-.wrap{max-width:var(--max);margin-inline:auto;padding-inline:clamp(1.1rem,4vw,2rem)}
-.skip{position:absolute;left:-9999px;top:0;background:var(--ink);color:var(--bg);padding:.6rem 1rem;z-index:99;border-radius:0 0 8px 0}
-.skip:focus{left:0}
-:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+    /* Tablet and mobile layouts */
+    @media (max-width: 900px) {
+      html { scroll-padding-top: 120px }
+      .navigation { align-items: flex-start; flex-direction: column; gap: 6px; padding: 10px 0 }
+      .nav-links { width: 100%; margin-left: 0; gap: 18px; justify-content: flex-start; overflow-x: auto; padding: 2px 0 8px }
+      .nav-links a.button { margin-left: 0 }
+      .hero-content, .run-content { grid-template-columns: 1fr }
+      .steps-grid, .features-grid { grid-template-columns: repeat(2, 1fr) }
+      .facts-grid { grid-template-columns: repeat(2, 1fr) }
+      .fact:nth-child(3) { border-left: none; padding-left: 0 }
+      .fact:nth-child(3), .fact:nth-child(4) { border-top: 1px solid var(--border) }
+    }
+    @media (max-width: 650px) {
+      body { font-size: 16px }
+      .nav-links a.button { min-height: 36px; padding: 0 16px }
+      .hero { padding: 55px 0 }
+      h1 { font-size: 3rem }
+      h2 { font-size: 2.1rem }
+      section { padding: 55px 0 }
+      .steps-grid, .features-grid, .examples-grid, .privacy-grid { grid-template-columns: 1fr }
+      .hero-buttons .button { width: 100%; text-align: center }
+      .fact { padding: 18px 12px }
+    }
 
-/* header */
-header.site{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
-.nav{display:flex;align-items:center;gap:1.5rem;min-height:62px}
-.brand{display:flex;align-items:center;gap:.55rem;font-family:var(--serif);font-weight:600;font-size:1.4rem;color:var(--ink);text-decoration:none;flex:none}
-.brand svg{width:26px;height:26px;color:var(--accent)}
-nav.links{margin-left:auto;display:flex;align-items:center;gap:1.4rem;font-size:.93rem}
-nav.links a{color:var(--ink-2);text-decoration:none;padding:.3rem 0;border-bottom:2px solid transparent;white-space:nowrap}
-nav.links a:hover{color:var(--ink);border-bottom-color:var(--accent)}
-.btn{display:inline-flex;align-items:center;gap:.5rem;font:600 .95rem var(--sans);text-decoration:none;padding:.72rem 1.3rem;border-radius:999px;border:1.5px solid var(--ink);color:var(--ink);background:transparent;transition:background .18s,color .18s,border-color .18s;cursor:pointer}
-.btn:hover{background:var(--ink);color:var(--bg)}
-.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-.btn.primary:hover{background:var(--ink);border-color:var(--ink);color:var(--bg)}
-nav.links a.btn{padding:.45rem 1rem;color:var(--ink);border-bottom:1.5px solid var(--ink)}
-nav.links a.btn:hover{color:var(--bg)}
+    /* Respect reduced-motion preferences */
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto }
+      * { transition: none !important }
+    }
+  </style>
 
-/* hero */
-.hero{padding:clamp(3rem,8vw,6.5rem) 0 clamp(3rem,6vw,5rem)}
-.hero-grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:clamp(2rem,5vw,4.5rem);align-items:center}
-.kicker{display:inline-flex;align-items:center;gap:.5rem;font:500 .78rem var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);background:var(--surface);border:1px solid var(--line);padding:.3rem .8rem;border-radius:999px;margin-bottom:1.4rem}
-.kicker i{width:7px;height:7px;border-radius:50%;background:var(--accent);display:block}
-h1{font-family:var(--serif);font-weight:500;font-size:clamp(2.6rem,6vw,4.4rem);line-height:1.04;letter-spacing:-.02em;text-wrap:balance}
-h1 em{font-style:italic;color:var(--accent)}
-.lede{margin-top:1.4rem;font-size:1.15rem;color:var(--ink-2);max-width:54ch}
-.cta{margin-top:2rem;display:flex;gap:.8rem;flex-wrap:wrap}
-.hero-note{margin-top:1.2rem;font-size:.88rem;color:var(--ink-3)}
-
-.graph-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:1rem 1rem .8rem;box-shadow:0 1px 0 var(--line),0 18px 40px -24px rgba(20,25,60,.35)}
-.graph-card svg{width:100%;height:auto}
-.graph-card figcaption{font-size:.82rem;color:var(--ink-3);padding:.6rem .4rem 0;display:flex;flex-wrap:wrap;gap:.4rem 1.2rem}
-.lg{display:inline-flex;align-items:center;gap:.45rem}
-.lg svg{width:26px;height:8px;display:inline-block}
-.mk{fill:var(--edge)}
-.n-rect{fill:var(--surface);stroke:var(--ink);stroke-width:1.4}
-.n-rect.hl{fill:var(--accent-soft);stroke:var(--accent)}
-.n-rect.dim{stroke:var(--edge);stroke-dasharray:4 4}
-.n-txt{font:500 13.5px var(--serif);fill:var(--ink);text-anchor:middle}
-.e{stroke:var(--edge);stroke-width:1.5;fill:none}
-.e.dash{stroke-dasharray:5 5}
-.e-txt{font:400 10.5px var(--mono);fill:var(--ink-3);text-anchor:middle}
-
-/* facts band */
-.facts{background:var(--surface);border-block:1px solid var(--line)}
-.facts .wrap{display:grid;grid-template-columns:repeat(4,1fr)}
-.fact{padding:1.6rem 1.2rem;border-left:1px solid var(--line)}
-.fact:first-child{border-left:0;padding-left:0}
-.fact b{display:block;font:500 2.3rem/1.1 var(--serif);letter-spacing:-.01em}
-.fact span{font-size:.86rem;color:var(--ink-2)}
-
-/* sections */
-section{padding-block:clamp(3.5rem,8vw,6rem)}
-section.alt{background:var(--bg-2);border-block:1px solid var(--line)}
-.eyebrow{font:500 .78rem var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin-bottom:.7rem}
-h2{font-family:var(--serif);font-weight:500;font-size:clamp(1.9rem,3.8vw,2.8rem);line-height:1.12;letter-spacing:-.015em;max-width:24ch;text-wrap:balance}
-.sub{margin-top:.9rem;color:var(--ink-2);max-width:62ch}
-.sec-head{margin-bottom:clamp(2rem,4vw,3.2rem)}
-h3{font-family:var(--serif);font-weight:600;font-size:1.28rem;line-height:1.25}
-
-/* steps */
-.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:1.2rem;counter-reset:s}
-.step{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:1.6rem 1.5rem 1.5rem;position:relative}
-.step::before{counter-increment:s;content:counter(s);display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font:600 .95rem var(--sans);margin-bottom:1rem}
-.step h3{margin-bottom:.5rem}
-.step p{font-size:.95rem;color:var(--ink-2)}
-
-/* features */
-.features{display:grid;grid-template-columns:repeat(3,1fr);gap:1.2rem}
-.feature{padding:1.5rem 0 0;border-top:2px solid var(--ink)}
-.feature h3{margin-bottom:.45rem}
-.feature p{font-size:.95rem;color:var(--ink-2)}
-
-/* examples */
-.relkey{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.4rem}
-.tag{font:500 .74rem var(--mono);letter-spacing:.03em;color:var(--accent);background:var(--accent-soft);padding:.25rem .65rem;border-radius:999px}
-.samples{display:grid;grid-template-columns:repeat(2,1fr);gap:1.2rem}
-.sample{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:1.4rem 1.5rem;min-width:0}
-.sample .math{margin:.7rem 0 .5rem;overflow-x:auto;overflow-y:hidden;padding-block:.25rem}
-.sample p{font-size:.92rem;color:var(--ink-2)}
-.sample .tags{margin-top:.8rem;display:flex;gap:.4rem;flex-wrap:wrap}
-.note{margin-top:1.4rem;font-size:.88rem;color:var(--ink-3);max-width:70ch}
-
-/* run */
-.run-grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:clamp(1.5rem,4vw,3rem);align-items:start}
-.cmd-steps{list-style:none;display:grid;gap:1.4rem}
-.cmd-steps li{display:grid;grid-template-columns:2rem 1fr;gap:.9rem}
-.cmd-steps .n{font:500 1.5rem/1 var(--serif);color:var(--accent)}
-.cmd-steps h3{font-size:1.1rem;margin-bottom:.2rem}
-.cmd-steps p{font-size:.93rem;color:var(--ink-2)}
-.term{background:#14161D;color:#E8EAF2;border-radius:12px;overflow:hidden;border:1px solid #2A2F3E}
-.term-bar{display:flex;align-items:center;justify-content:space-between;padding:.55rem .9rem;background:#1C2029;border-bottom:1px solid #2A2F3E;font:500 .74rem var(--mono);color:#9AA0B4}
-.term pre{padding:1rem 1.1rem;overflow-x:auto;font-size:.84rem;line-height:1.75}
-.term .c{color:#7F869C}
-.term .p{color:#8FA0FF;user-select:none}
-.copy{font:500 .74rem var(--mono);color:#C9CEE0;background:transparent;border:1px solid #3A4054;border-radius:6px;padding:.2rem .6rem;cursor:pointer}
-.copy:hover{background:#2A2F3E}
-.term + .term{margin-top:1rem}
-
-/* testing table */
-.table-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
-table{width:100%;border-collapse:collapse;font-size:.94rem;min-width:560px}
-th,td{text-align:left;padding:.85rem 1.1rem;border-bottom:1px solid var(--line);vertical-align:top}
-tbody tr:last-child td{border-bottom:0}
-thead th{font:500 .74rem var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);background:var(--bg-2)}
-td.res{font-weight:600;white-space:nowrap}
-.callout{margin-top:1.4rem;background:var(--warn-soft);border:1px solid color-mix(in srgb,var(--warn) 35%,transparent);color:var(--ink);border-radius:var(--r);padding:1rem 1.2rem;font-size:.92rem;max-width:80ch}
-.callout b{color:var(--warn)}
-
-/* responsible use */
-.two{display:grid;grid-template-columns:1fr 1fr;gap:clamp(1.5rem,4vw,3.5rem)}
-.two h3{margin-bottom:.5rem}
-.two p{color:var(--ink-2);font-size:.97rem}
-
-footer{border-top:1px solid var(--line);padding-block:2.4rem;font-size:.88rem;color:var(--ink-3);background:var(--bg)}
-footer .wrap{display:flex;justify-content:space-between;gap:1rem 2rem;flex-wrap:wrap}
-footer a{color:var(--ink-2)}
-
-@media (max-width:960px){
-  .hero-grid,.run-grid{grid-template-columns:1fr}
-  .steps,.features{grid-template-columns:1fr 1fr}
-  .facts .wrap{grid-template-columns:repeat(2,1fr)}
-  .fact:nth-child(3){border-left:0;padding-left:0}
-  .fact:nth-child(n+3){border-top:1px solid var(--line)}
-}
-@media (max-width:640px){
-  body{font-size:16px}
-  .nav{flex-wrap:wrap;gap:.2rem 1rem;padding-block:.6rem}
-  nav.links{order:3;flex-basis:100%;margin-left:0;overflow-x:auto;gap:1.2rem;padding-bottom:.3rem;scrollbar-width:none}
-  nav.links::-webkit-scrollbar{display:none}
-  nav.links a.btn{margin-left:auto}
-  .steps,.features,.samples,.two{grid-template-columns:1fr}
-  .cta .btn{flex:1 1 100%;justify-content:center}
-}
-@media (prefers-reduced-motion:reduce){
-  html{scroll-behavior:auto}
-  *{transition:none!important;animation:none!important}
-}
-</style>
 </head>
+
 <body>
-<a class="skip" href="#main">Skip to main content</a>
+  <a class="skip-link" href="#main">Skip to main content</a>
 
-<header class="site">
-  <div class="wrap nav">
-    <a class="brand" href="./" aria-label="Mathernet home">
-      <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="25" r="3"/><circle cx="25" cy="24" r="3"/><circle cx="16" cy="7" r="3"/><path d="M9 23 14 9M18 9l6 13M10 25h12"/></svg>
-      Mathernet
-    </a>
-    <nav class="links" aria-label="Main">
-      <a href="#how">How it works</a>
-      <a href="#features">Features</a>
-      <a href="#examples">Examples</a>
-      <a href="#run">Run it</a>
-      <a href="#testing">Testing</a>
-      <a href="#responsible">Privacy</a>
-      <a class="btn" href="https://github.com/QuackCatt/Mathernet">GitHub</a>
-    </nav>
-  </div>
-</header>
-
-<main id="main">
-
-<section class="hero" style="padding-block:clamp(3rem,8vw,6.5rem) clamp(3rem,6vw,5rem)">
-  <div class="wrap hero-grid">
-    <div>
-      <p class="kicker"><i></i>HKU AILT9019 · AI Literacy II</p>
-      <h1>Learn formulas as a <em>map</em>, not a list.</h1>
-      <p class="lede">Describe a formula in your own words. Mathernet finds candidates, builds a rendered card, and links it into a knowledge map of prerequisites and derivations. You review the sources, add your own notes, and cut any connection the model got wrong.</p>
-      <div class="cta">
-        <a class="btn primary" href="#run">Run it locally</a>
-        <a class="btn" href="https://github.com/QuackCatt/Mathernet">View source</a>
-      </div>
-      <p class="hero-note">Runs on your computer. Bring your own OpenRouter or DeepSeek key.</p>
+  <header class="site-header">
+    <div class="container navigation">
+      <a class="brand" href="./" aria-label="Mathernet home">
+        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="7" cy="25" r="3"></circle>
+          <circle cx="25" cy="24" r="3"></circle>
+          <circle cx="16" cy="7" r="3"></circle>
+          <path d="M9 23 14 9M18 9l6 13M10 25h12"></path>
+        </svg>
+        Mathernet
+      </a>
+      <nav class="nav-links" aria-label="Main navigation">
+        <a href="#how">How it works</a>
+        <a href="#features">Features</a>
+        <a href="#examples">Examples</a>
+        <a href="#run">Run it</a>
+        <a href="#testing">Testing</a>
+        <a href="#responsible">Privacy</a>
+        <a class="button" href="https://github.com/QuackCatt/Mathernet">GitHub</a>
+      </nav>
     </div>
+  </header>
 
-    <figure class="graph-card">
-      <svg viewBox="0 0 480 350" role="img" aria-label="Illustration of a Mathernet map. Taylor series points to Maclaurin series and Newton's method; Maclaurin series points to Euler's identity; Markov's inequality points to Chebyshev's inequality with a dashed, unverified edge.">
-        <defs>
-          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk" d="M0 1 10 5 0 9z"/></marker>
-        </defs>
-        <path class="e" d="M140 154 C165 130 185 116 208 100" marker-end="url(#ar)"/>
-        <text class="e-txt" x="138" y="116">prerequisite</text>
-        <path class="e" d="M292 94 C320 105 335 122 345 140" marker-end="url(#ar)"/>
-        <text class="e-txt" x="352" y="108">derivation basis</text>
-        <path class="e" d="M122 190 C150 215 175 228 198 236" marker-end="url(#ar)"/>
-        <text class="e-txt" x="92" y="228">derivation basis</text>
-        <path class="e dash" d="M152 306 L304 306" marker-end="url(#ar)"/>
-        <text class="e-txt" x="228" y="296">derivation basis · unverified</text>
+  <main id="main">
 
-        <g><rect class="n-rect hl" x="40" y="152" width="120" height="38" rx="19"/><text class="n-txt" x="100" y="176">Taylor series</text></g>
-        <g><rect class="n-rect" x="196" y="62" width="128" height="38" rx="19"/><text class="n-txt" x="260" y="86">Maclaurin series</text></g>
-        <g><rect class="n-rect hl" x="320" y="146" width="130" height="38" rx="19"/><text class="n-txt" x="385" y="170">Euler’s identity</text></g>
-        <g><rect class="n-rect" x="196" y="238" width="136" height="38" rx="19"/><text class="n-txt" x="264" y="262">Newton’s method</text></g>
-        <g><rect class="n-rect dim" x="30" y="287" width="124" height="38" rx="19"/><text class="n-txt" x="92" y="311">Markov’s ineq.</text></g>
-        <g><rect class="n-rect dim" x="304" y="287" width="146" height="38" rx="19"/><text class="n-txt" x="377" y="311">Chebyshev’s ineq.</text></g>
-      </svg>
-      <figcaption>
-        <span class="lg"><svg viewBox="0 0 26 8" aria-hidden="true"><path class="e" d="M0 4h26"/></svg>edge with sources</span>
-        <span class="lg"><svg viewBox="0 0 26 8" aria-hidden="true"><path class="e dash" d="M0 4h26"/></svg>unverified edge</span>
-        <span>Illustration, not a screenshot.</span>
-      </figcaption>
-    </figure>
-  </div>
-</section>
-
-<div class="facts">
-  <div class="wrap">
-    <div class="fact"><b>4</b><span>relation types: prerequisite, derivation basis, special case, generalization</span></div>
-    <div class="fact"><b>2</b><span>supported AI providers: OpenRouter and DeepSeek</span></div>
-    <div class="fact"><b>0</b><span>third-party runtime dependencies</span></div>
-    <div class="fact"><b>129</b><span>automated tests, all passing</span></div>
-  </div>
-</div>
-
-<section id="how">
-  <div class="wrap">
-    <div class="sec-head">
-      <p class="eyebrow">How it works</p>
-      <h2>From a sentence to a study map in three steps</h2>
-      <p class="sub">The only outside connection is the provider API key you supply. Maps, notes and chats stay on your own disk.</p>
-    </div>
-    <div class="steps">
-      <article class="step">
-        <h3>Describe</h3>
-        <p>Type what you mean: “the inequality between arithmetic and geometric means”, a LaTeX string, or a half-remembered property. Pick the right formula from the candidates, or reopen one you already saved.</p>
-      </article>
-      <article class="step">
-        <h3>Connect</h3>
-        <p>The chosen formula becomes a KaTeX-rendered card with a short AI summary and any sources the model returned. Suggested dependency edges appear on your map straight away, each with its rationale.</p>
-      </article>
-      <article class="step">
-        <h3>Review &amp; cut</h3>
-        <p>You are the editor. Edges without sources are marked unverified, and any edge that is wrong can be cut from the map. Deleting a node also removes its deep-dive sessions and notes.</p>
-      </article>
-    </div>
-  </div>
-</section>
-
-<section id="features" class="alt">
-  <div class="wrap">
-    <div class="sec-head">
-      <p class="eyebrow">Features</p>
-      <h2>Built for learners who want to inspect everything</h2>
-    </div>
-    <div class="features">
-      <article class="feature">
-        <h3>Interactive knowledge map</h3>
-        <p>A force-directed canvas you can drag, pan and zoom. Selecting a node highlights its neighbours, and nodes are reachable by keyboard.</p>
-      </article>
-      <article class="feature">
-        <h3>Several mind maps</h3>
-        <p>Keep a probability revision map apart from your analysis notes. Maps are named, pinnable and deletable, and each shows only the edges between its own formulas.</p>
-      </article>
-      <article class="feature">
-        <h3>Deep dives that continue</h3>
-        <p>Ask for a long-form article on a formula or on one relationship, then keep the conversation going. Each one keeps its own saved thread.</p>
-      </article>
-      <article class="feature">
-        <h3>Your notes stay yours</h3>
-        <p>AI-generated context and your private notes live in separate places on every card. A study status records activity and is never presented as proof of mastery.</p>
-      </article>
-      <article class="feature">
-        <h3>Sources, labelled honestly</h3>
-        <p>Sources are shown as model output. Mathernet adds no citations of its own and does not independently verify the URLs a model returns.</p>
-      </article>
-      <article class="feature">
-        <h3>Refuses the wrong jobs</h3>
-        <p>Assessed-work answers, unrelated requests, and requests to fabricate citations or derivations are declined locally, before any API call is made.</p>
-      </article>
-    </div>
-  </div>
-</section>
-
-<section id="examples">
-  <div class="wrap">
-    <div class="sec-head">
-      <p class="eyebrow">Examples</p>
-      <h2>The kind of card you will build</h2>
-      <p class="sub">Four well-known formulas, shown the way a card presents them: rendered expression, a plain-language gloss, and how it connects to others.</p>
-    </div>
-    <div class="relkey" aria-label="Relation types">
-      <span class="tag">prerequisite</span><span class="tag">derivation basis</span><span class="tag">special case</span><span class="tag">generalization</span>
-    </div>
-    <div class="samples">
-      <article class="sample">
-        <h3>Euler’s identity</h3>
-        <div class="math">$$e^{i\pi} + 1 = 0$$</div>
-        <p>Links five fundamental constants. It is the special case $x=\pi$ of Euler’s formula $e^{ix}=\cos x+i\sin x$.</p>
-        <div class="tags"><span class="tag">special case</span><span class="tag">derivation basis</span></div>
-      </article>
-      <article class="sample">
-        <h3>Markov’s inequality</h3>
-        <div class="math">$$P(X \ge a) \le \frac{\mathbb{E}[X]}{a},\quad X\ge 0,\ a>0$$</div>
-        <p>The most basic tail bound. Chebyshev’s inequality follows by applying it to the squared deviation.</p>
-        <div class="tags"><span class="tag">derivation basis</span></div>
-      </article>
-      <article class="sample">
-        <h3>AM–GM inequality</h3>
-        <div class="math">$$\frac{a_1+\cdots+a_n}{n} \ge \sqrt[n]{a_1 \cdots a_n}$$</div>
-        <p>For non-negative reals the arithmetic mean is at least the geometric mean, with equality exactly when all terms are equal.</p>
-        <div class="tags"><span class="tag">prerequisite</span><span class="tag">generalization</span></div>
-      </article>
-      <article class="sample">
-        <h3>Newton’s method</h3>
-        <div class="math">$$x_{n+1} = x_n - \frac{f(x_n)}{f'(x_n)}$$</div>
-        <p>Root-finding by repeatedly replacing $f$ with its first-order Taylor approximation, so Taylor series sits upstream of it.</p>
-        <div class="tags"><span class="tag">derivation basis</span></div>
-      </article>
-    </div>
-    <p class="note">These cards illustrate the format. They are not exported from the app, and the connections shown are the standard textbook ones, not model output.</p>
-  </div>
-</section>
-
-<section id="run" class="alt">
-  <div class="wrap">
-    <div class="sec-head">
-      <p class="eyebrow">Run it yourself</p>
-      <h2>No install step. Just Python 3.11 or newer.</h2>
-      <p class="sub">Mathernet starts straight from the downloaded folder. Use a current desktop browser; there is no mobile interface.</p>
-    </div>
-    <div class="run-grid">
-      <ol class="cmd-steps">
-        <li><span class="n">1</span><div><h3>Get the code</h3><p>Clone the repository or download the ZIP from GitHub and unzip it. Keep the project folder together.</p></div></li>
-        <li><span class="n">2</span><div><h3>Start it</h3><p>Run the command for your system from inside that folder. Use the exact URL it prints (usually <code>http://127.0.0.1:8765</code>); if the port is busy it picks the next free one.</p></div></li>
-        <li><span class="n">3</span><div><h3>Connect a model</h3><p>Settings open on first launch. Choose OpenRouter or DeepSeek, paste your API key, and save. Then describe any formula. See the <a href="https://github.com/QuackCatt/Mathernet#first-time-setup">README setup guide</a> for key links.</p></div></li>
-      </ol>
-      <div>
-        <div class="term">
-          <div class="term-bar"><span>macOS / Linux</span><button class="copy" type="button" data-copy="git clone https://github.com/QuackCatt/Mathernet&#10;cd Mathernet&#10;./mathernet start">Copy</button></div>
-<pre><span class="p">$ </span>git clone https://github.com/QuackCatt/Mathernet
-<span class="p">$ </span>cd Mathernet
-<span class="p">$ </span>./mathernet start
-<span class="c"># permission error? run: python3 mathernet start</span></pre>
+    <!-- Introduction -->
+    <section class="hero">
+      <div class="container hero-content">
+        <div>
+          <p class="kicker"><i aria-hidden="true"></i>HKU AILT9019 · AI Literacy II</p>
+          <h1>Learn formulas as a <em>map</em>, not a list.</h1>
+          <p class="intro-text">Describe a formula in your own words. Mathernet finds possible matches, creates a formula card and connects it to related ideas in a knowledge map. You can review the sources, add your own notes and remove connections that are incorrect.</p>
+          <div class="hero-buttons">
+            <a class="button primary" href="#run">Run it locally</a>
+            <a class="button" href="https://github.com/QuackCatt/Mathernet">View source</a>
+          </div>
+          <p class="hero-note">Runs on your computer. Bring your own OpenRouter or DeepSeek API key.</p>
         </div>
-        <div class="term">
-          <div class="term-bar"><span>Windows</span><button class="copy" type="button" data-copy="git clone https://github.com/QuackCatt/Mathernet&#10;cd Mathernet&#10;py .\run_mathernet.py start">Copy</button></div>
-<pre><span class="p">&gt; </span>git clone https://github.com/QuackCatt/Mathernet
-<span class="p">&gt; </span>cd Mathernet
-<span class="p">&gt; </span>py .\run_mathernet.py start
-<span class="c"># no py launcher? use: python .\run_mathernet.py start</span></pre>
+        <figure class="graph-card">
+          <svg viewBox="0 0 480 350" role="img" aria-label="Example knowledge map connecting Taylor series, Maclaurin series, Euler’s identity, Newton’s method, Markov’s inequality and Chebyshev’s inequality.">
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+                <path fill="#8B91A6" d="M0 1 10 5 0 9z"></path>
+              </marker>
+            </defs>
+            <path class="graph-edge" d="M140 154 C165 130 185 116 208 100" marker-end="url(#arrow)"></path>
+            <text class="graph-description" x="138" y="116">special case</text>
+            <path class="graph-edge" d="M292 94 C320 105 335 122 345 140" marker-end="url(#arrow)"></path>
+            <text class="graph-description" x="352" y="108">derivation basis</text>
+            <path class="graph-edge" d="M122 190 C150 215 175 228 198 236" marker-end="url(#arrow)"></path>
+            <text class="graph-description" x="92" y="228">derivation basis</text>
+            <path class="graph-edge dashed" d="M152 306 L304 306" marker-end="url(#arrow)"></path>
+            <text class="graph-description" x="228" y="296">unverified relation</text>
+            <rect class="graph-node highlight" x="40" y="152" width="120" height="38" rx="19"></rect>
+            <text class="graph-label" x="100" y="176">Taylor series</text>
+            <rect class="graph-node" x="196" y="62" width="128" height="38" rx="19"></rect>
+            <text class="graph-label" x="260" y="86">Maclaurin series</text>
+            <rect class="graph-node highlight" x="320" y="146" width="130" height="38" rx="19"></rect>
+            <text class="graph-label" x="385" y="170">Euler’s identity</text>
+            <rect class="graph-node" x="196" y="238" width="136" height="38" rx="19"></rect>
+            <text class="graph-label" x="264" y="262">Newton’s method</text>
+            <rect class="graph-node unverified" x="30" y="287" width="124" height="38" rx="19"></rect>
+            <text class="graph-label" x="92" y="311">Markov’s ineq.</text>
+            <rect class="graph-node unverified" x="304" y="287" width="146" height="38" rx="19"></rect>
+            <text class="graph-label" x="377" y="311">Chebyshev’s ineq.</text>
+          </svg>
+          <figcaption>
+            <span class="legend-item"><svg class="legend-line" viewBox="0 0 26 8" aria-hidden="true"><path class="graph-edge" d="M0 4h26"></path></svg>Relationship with sources</span>
+            <span class="legend-item"><svg class="legend-line" viewBox="0 0 26 8" aria-hidden="true"><path class="graph-edge dashed" d="M0 4h26"></path></svg>Unverified relationship</span>
+            <span>Illustration, not an app screenshot.</span>
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- Project facts -->
+
+    <div class="facts">
+      <div class="container facts-grid">
+        <div class="fact"><strong>4</strong><span>relationship types: prerequisite, derivation basis, special case and generalization</span></div>
+        <div class="fact"><strong>2</strong><span>supported AI providers: OpenRouter and DeepSeek</span></div>
+        <div class="fact"><strong>0</strong><span>third-party Python dependencies</span></div>
+        <div class="fact"><strong>129</strong><span>automated tests, all passing</span></div>
+      </div>
+    </div>
+
+    <!-- How it works -->
+
+    <section id="how">
+      <div class="container">
+        <div class="section-heading">
+          <p class="section-label">How it works</p>
+          <h2>From a sentence to a study map in three steps</h2>
+          <p class="section-intro">Mathernet runs on your own computer. Your maps and notes are saved locally, while AI features connect to the provider you choose.</p>
+        </div>
+        <div class="steps-grid">
+          <article class="step-card">
+            <div class="step-number">1</div>
+            <h3>Describe</h3>
+            <p>Enter a formula name, a mathematical expression or a description in your own words. Choose the closest match from the suggestions or open a formula you have already saved.</p>
+          </article>
+          <article class="step-card">
+            <div class="step-number">2</div>
+            <h3>Connect</h3>
+            <p>The selected formula appears as a card with a rendered equation, a short AI-generated explanation and any sources returned by the model. Suggested relationships can be added to your map.</p>
+          </article>
+          <article class="step-card">
+            <div class="step-number">3</div>
+            <h3>Review and edit</h3>
+            <p>Check the suggested relationships before relying on them. Relationships without sources are marked as unverified, and you can remove connections that are incorrect.</p>
+          </article>
         </div>
       </div>
-    </div>
-  </div>
-</section>
+    </section>
 
-<section id="testing">
-  <div class="wrap">
-    <div class="sec-head">
-      <p class="eyebrow">Testing</p>
-      <h2>What we check, and how you can re-run it</h2>
-      <p class="sub">Everything below can be reproduced from a fresh clone with the commands shown.</p>
-    </div>
-    <div class="table-scroll">
-      <table>
-        <thead><tr><th scope="col">Area</th><th scope="col">How it is checked</th><th scope="col">Result</th></tr></thead>
-        <tbody>
-          <tr><td>Regression suite</td><td><code>PYTHONPATH=src python -m unittest discover -s tests</code></td><td class="res">129 tests pass</td></tr>
-          <tr><td>Safety refusals</td><td>Five cases in <code>scripts/evaluate_real.py</code>: exam-style request, fabrication (English and Chinese), non-formula request, and a benign control</td><td class="res">5 / 5 correct</td></tr>
-          <tr><td>Persistence round-trip</td><td>Save, reload, compare, in the same script</td><td class="res">passes</td></tr>
-          <tr><td>Local server hardening</td><td>Binds to <code>127.0.0.1</code> and rejects unexpected Host and Origin headers</td><td class="res">covered by tests</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="callout"><b>Corpus scoring depends on your own map.</b> <code>scripts/evaluate_real.py</code> also scores a graph against a hand-checked gold standard of 10 expected relations and 14 lookup queries. Learner data is not committed to this repository, so those figures appear only when you run the script on a populated <code>data/mathernet.json</code>.</p>
-  </div>
-</section>
+    <!-- Features -->
 
-<section id="responsible" class="alt">
-  <div class="wrap">
-    <div class="sec-head">
-      <p class="eyebrow">Privacy &amp; responsible use</p>
-      <h2>Your data stays put. AI output stays a draft.</h2>
-    </div>
-    <div class="two">
-      <div>
-        <h3>Local by design</h3>
-        <p>Maps, notes and chats are stored as plain JSON on your own disk. Your API key goes only to the provider you configure, and the app is served on your own machine. Saved cards remain usable offline.</p>
+    <section id="features" class="section-alt">
+      <div class="container">
+        <div class="section-heading">
+          <p class="section-label">Features</p>
+          <h2>Tools to help organise and explore mathematical ideas</h2>
+        </div>
+        <div class="features-grid">
+          <article class="feature-card">
+            <h3>Interactive knowledge map</h3>
+            <p>Move, zoom and explore formulas on a visual map. Selecting a formula highlights its related items.</p>
+          </article>
+          <article class="feature-card">
+            <h3>Separate mind maps</h3>
+            <p>Create different maps for different courses or topics, such as probability and mathematical analysis.</p>
+          </article>
+          <article class="feature-card">
+            <h3>Detailed explanations</h3>
+            <p>Explore longer explanations of a formula or a relationship, and continue asking questions in the same conversation.</p>
+          </article>
+          <article class="feature-card">
+            <h3>Personal study notes</h3>
+            <p>Keep your own notes separately from AI-generated explanations. Study status helps record your progress but does not prove mastery.</p>
+          </article>
+          <article class="feature-card">
+            <h3>Sources you can inspect</h3>
+            <p>Sources are provided by the AI model. Mathernet does not independently check whether the returned links are correct.</p>
+          </article>
+          <article class="feature-card">
+            <h3>Responsible use</h3>
+            <p>Mathernet is designed as a learning and organisation tool, not as a way to produce answers for assessed work or fabricate sources.</p>
+          </article>
+        </div>
       </div>
-      <div>
-        <h3>Model output is not verified</h3>
-        <p>Summaries, suggested edges and cited sources are AI-generated, editable, and deletable. Mathernet does not check them independently, so uncited answers are visibly qualified. Treat every card as a starting point for your own checking.</p>
+    </section>
+
+    <!-- Formula examples -->
+
+    <section id="examples">
+      <div class="container">
+        <div class="section-heading">
+          <p class="section-label">Examples</p>
+          <h2>Examples of formula cards</h2>
+          <p class="section-intro">Each example includes a mathematical expression, a short explanation and possible relationships with other formulas.</p>
+        </div>
+        <div class="tag-list" role="group" aria-label="Relationship types">
+          <span class="tag">prerequisite</span>
+          <span class="tag">derivation basis</span>
+          <span class="tag">special case</span>
+          <span class="tag">generalization</span>
+        </div>
+        <div class="examples-grid">
+          <article class="example-card">
+            <h3>Euler’s identity</h3>
+            <div class="formula">$$e^{i\pi} + 1 = 0$$</div>
+            <p>This equation connects five important mathematical constants. It is a special case of Euler’s formula when $x=\pi$.</p>
+            <div class="example-tags"><span class="tag">special case</span><span class="tag">derivation basis</span></div>
+          </article>
+          <article class="example-card">
+            <h3>Markov’s inequality</h3>
+            <div class="formula">$$P(X \ge a) \le \frac{\mathbb{E}[X]}{a},\quad X\ge 0,\ a>0$$</div>
+            <p>This inequality gives an upper bound on the probability that a non-negative random variable is at least a chosen value.</p>
+            <div class="example-tags"><span class="tag">derivation basis</span></div>
+          </article>
+          <article class="example-card">
+            <h3>AM–GM inequality</h3>
+            <div class="formula">$$\frac{a_1+\cdots+a_n}{n} \ge \sqrt[n]{a_1 \cdots a_n}$$</div>
+            <p>For non-negative real numbers, the arithmetic mean is at least as large as the geometric mean.</p>
+            <div class="example-tags"><span class="tag">prerequisite</span><span class="tag">generalization</span></div>
+          </article>
+          <article class="example-card">
+            <h3>Newton’s method</h3>
+            <div class="formula">$$x_{n+1} = x_n - \frac{f(x_n)}{f'(x_n)}$$</div>
+            <p>This method estimates a root of a function by repeatedly using a straight-line approximation near the current estimate.</p>
+            <div class="example-tags"><span class="tag">derivation basis</span></div>
+          </article>
+        </div>
+        <p class="small-note">These cards show the type of information Mathernet can present. They are examples for this webpage, not screenshots or exported cards from the app.</p>
       </div>
+    </section>
+
+    <!-- How to run Mathernet -->
+
+    <section id="run" class="section-alt">
+      <div class="container">
+        <div class="section-heading">
+          <p class="section-label">Run it yourself</p>
+          <h2>Get started with Python 3.11 or newer</h2>
+          <p class="section-intro">Download the project folder and start Mathernet from your computer. You need Python 3.11 or newer and a desktop browser. Mathernet does not currently include a mobile interface.</p>
+        </div>
+        <div class="run-content">
+          <ol class="run-steps">
+            <li>
+              <h3>Download the project</h3>
+              <p>Open the GitHub repository, select Code and choose Download ZIP. Unzip the downloaded folder.</p>
+            </li>
+            <li>
+              <h3>Open the project folder</h3>
+              <p>On macOS or Linux, open Terminal, type <code>cd </code> and drag the unzipped folder into the window. On Windows, open the folder in File Explorer, type <code>cmd</code> in the address bar and press Enter.</p>
+            </li>
+            <li>
+              <h3>Start the application</h3>
+              <p>Copy the command for your computer. Keep the Terminal or Command Prompt window open and visit the local URL printed on screen.</p>
+            </li>
+            <li>
+              <h3>Connect an AI provider</h3>
+              <p>On first use, select OpenRouter or DeepSeek, enter your API key and save the provider settings. See the <a href="https://github.com/QuackCatt/Mathernet#first-time-setup">README setup guide</a> for details.</p>
+            </li>
+          </ol>
+          <div>
+            <div class="code-card">
+              <div class="code-heading">
+                <span>macOS / Linux</span>
+                <button class="copy-button" type="button" data-copy="./mathernet start">Copy</button>
+              </div>
+              <pre><span class="terminal-symbol">$</span> ./mathernet start
+<span class="code-comment"># If there is a permission error: python3 mathernet start</span></pre>
+            </div>
+            <div class="code-card">
+              <div class="code-heading">
+                <span>Windows</span>
+                <button class="copy-button" type="button" data-copy="py .\run_mathernet.py start">Copy</button>
+              </div>
+              <pre><span class="terminal-symbol">&gt;</span> py .\run_mathernet.py start
+<span class="code-comment"># If py is unavailable: python .\run_mathernet.py start</span></pre>
+            </div>
+            <p class="small-note">Use the exact local web address printed by the application, usually starting with <code>http://127.0.0.1</code>. The port number may be different on your computer.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Project testing information -->
+
+    <section id="testing">
+      <div class="container">
+        <div class="section-heading">
+          <p class="section-label">Testing</p>
+          <h2>What we check, and how you can re-run it</h2>
+          <p class="section-intro">Everything below can be reproduced from a fresh clone with the commands shown.</p>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr><th scope="col">Area</th><th scope="col">How it is checked</th><th scope="col">Result</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Regression suite</td>
+                <td>
+                  macOS / Linux: <code>PYTHONPATH=src python -m unittest discover -s tests</code><br>
+                  Windows PowerShell: <code>$env:PYTHONPATH="src"; py -m unittest discover -s tests</code><br>
+                  Windows CMD: <code>set "PYTHONPATH=src" &amp;&amp; py -m unittest discover -s tests</code>
+                </td>
+                <td class="result">129 tests pass</td>
+              </tr>
+              <tr><td>Safety refusals</td><td>Five cases in <code>scripts/evaluate_real.py</code>: exam-style request, fabrication (English and Chinese), non-formula request, and a benign control</td><td class="result">5 / 5 correct</td></tr>
+              <tr><td>Persistence round-trip</td><td>Save, reload, compare, in the same script</td><td class="result">Passes</td></tr>
+              <tr><td>Local server hardening</td><td>Binds to <code>127.0.0.1</code> and rejects unexpected Host and Origin headers</td><td class="result">Covered by tests</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="notice"><strong>Corpus scoring depends on your own map.</strong> <code>scripts/evaluate_real.py</code> also scores a graph against a hand-checked gold standard of 10 expected relations and 14 lookup queries. Learner data is not committed to this repository, so those figures appear only when you run the script on a populated <code>data/mathernet.json</code>.</p>
+      </div>
+    </section>
+
+    <!-- Privacy and responsible use -->
+
+    <section id="responsible" class="section-alt">
+      <div class="container">
+        <div class="section-heading">
+          <p class="section-label">Privacy and responsible use</p>
+          <h2>Your study data stays local. AI results still need checking.</h2>
+        </div>
+        <div class="privacy-grid">
+          <div>
+            <h3>Local storage</h3>
+            <p>Mind maps, personal notes and saved conversations are stored on your own computer. Your API key is saved locally and is sent only to the AI provider you select when you use AI features.</p>
+          </div>
+          <div>
+            <h3>Check AI-generated information</h3>
+            <p>Formula explanations, suggested relationships and sources may contain mistakes. Mathernet does not independently verify AI-generated information, so check important details with reliable learning materials.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container footer-content">
+      <span>Mathernet · HKU AILT9019 AI Literacy II team project, 2026–27.</span>
+      <span>
+        <a href="https://github.com/QuackCatt/Mathernet">GitHub</a> ·
+        <a href="https://github.com/QuackCatt/Mathernet/blob/main/README.md">README</a> ·
+        <a href="https://github.com/QuackCatt/Mathernet/issues">Issues</a>
+      </span>
     </div>
-  </div>
-</section>
+  </footer>
 
-</main>
+  <script>
+    function copyTextFallback(text) {
+      var field = document.createElement("textarea");
+      field.value = text;
+      field.setAttribute("readonly", "");
+      field.style.position = "fixed";
+      field.style.left = "-9999px";
+      field.style.top = "0";
+      document.body.appendChild(field);
+      var copied = false;
+      try {
+        field.focus();
+        field.select();
+        field.setSelectionRange(0, field.value.length);
+        copied = document.execCommand("copy");
+      } finally {
+        field.remove();
+      }
+      return copied;
+    }
+    document.querySelectorAll(".copy-button").forEach(function(button) {
+      button.addEventListener("click", async function() {
+        if (button.disabled) return;
+        var command = button.getAttribute("data-copy") || "";
+        var originalLabel = button.textContent;
+        button.disabled = true;
+        try {
+          var copied = false;
+          if (navigator.clipboard && window.isSecureContext &&
+              typeof navigator.clipboard.writeText === "function") {
+            try {
+              await navigator.clipboard.writeText(command);
+              copied = true;
+            } catch (clipboardError) {
+              copied = false;
+            }
+          }
+          if (!copied) copied = copyTextFallback(command);
+          if (!copied) throw new Error("Clipboard copy was unavailable");
+          button.textContent = "Copied!";
+        } catch (error) {
+          button.textContent = "Copy failed";
+          window.prompt("Copy this command manually:", command);
+        }
+        window.setTimeout(function() {
+          button.textContent = originalLabel;
+          button.disabled = false;
+        }, 1800);
+      });
+    });
+  </script>
 
-<footer>
-  <div class="wrap">
-    <span>Mathernet · HKU AILT9019 AI Literacy II team project, 2025–26.</span>
-    <span><a href="https://github.com/QuackCatt/Mathernet">GitHub</a> · <a href="https://github.com/QuackCatt/Mathernet/blob/main/README.md">README</a> · <a href="https://github.com/QuackCatt/Mathernet/issues">Issues</a></span>
-  </div>
-</footer>
-
-<script>
-document.querySelectorAll('.copy').forEach(function(btn){
-  btn.addEventListener('click',function(){
-    var text=btn.getAttribute('data-copy');
-    var done=function(){var o=btn.textContent;btn.textContent='Copied';setTimeout(function(){btn.textContent=o},1400)};
-    try{
-      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,function(){})}
-    }catch(e){}
-  });
-});
-</script>
 </body>
 </html>
